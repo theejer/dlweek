@@ -24,6 +24,39 @@ function Get-ScriptsFromPackageJson {
     return $pkg.scripts.PSObject.Properties.Name
 }
 
+function Get-PackageJsonObject {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$PackageJsonPath
+    )
+
+    $raw = Get-Content -Raw -Path $PackageJsonPath
+    return ($raw | ConvertFrom-Json)
+}
+
+function Test-IsExpoProject {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$PackageJson,
+        [Parameter(Mandatory = $true)]
+        [string]$AppRoot
+    )
+
+    $hasExpoDependency = $false
+    if ($null -ne $PackageJson.dependencies -and ($PackageJson.dependencies.PSObject.Properties.Name -contains "expo")) {
+        $hasExpoDependency = $true
+    }
+    if ($null -ne $PackageJson.devDependencies -and ($PackageJson.devDependencies.PSObject.Properties.Name -contains "expo")) {
+        $hasExpoDependency = $true
+    }
+
+    $hasExpoConfigFile = (Test-Path -Path (Join-Path $AppRoot "app.json") -PathType Leaf) -or
+        (Test-Path -Path (Join-Path $AppRoot "app.config.js") -PathType Leaf) -or
+        (Test-Path -Path (Join-Path $AppRoot "app.config.ts") -PathType Leaf)
+
+    return ($hasExpoDependency -or $hasExpoConfigFile)
+}
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)]
@@ -55,6 +88,8 @@ if (-not (Test-Path -Path $packageJsonPath -PathType Leaf)) {
 }
 
 $scriptNames = Get-ScriptsFromPackageJson -PackageJsonPath $packageJsonPath
+$packageJson = Get-PackageJsonObject -PackageJsonPath $packageJsonPath
+$isExpoProject = Test-IsExpoProject -PackageJson $packageJson -AppRoot $resolvedAppPath
 
 Push-Location $resolvedAppPath
 try {
@@ -89,7 +124,11 @@ try {
     }
 
     if (-not $SkipExpoDoctor) {
-        Invoke-Step -Name "expo doctor" -Command "npx expo-doctor"
+        if ($isExpoProject) {
+            Invoke-Step -Name "expo doctor" -Command "npx expo-doctor"
+        } else {
+            Write-Host "Skipping expo doctor: Expo project not detected."
+        }
     } else {
         Write-Host "Skipping expo doctor."
     }

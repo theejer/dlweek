@@ -1,6 +1,6 @@
 ---
 name: "security-best-practices"
-description: "Perform language and framework specific security best-practice reviews and suggest improvements. Trigger only when the user explicitly requests security best practices guidance, a security review/report, or secure-by-default coding help. Trigger only for supported languages (python, javascript/typescript, go). Do not trigger for general code review, debugging, or non-security tasks."
+description: "Perform language and framework specific security best-practice reviews and suggest improvements. Trigger when the user asks for security guidance, security review/report, or secure-by-default coding help. Also trigger by default for high-risk flows (emergency actions, location handling, local storage of sensitive data, auth/session boundaries, or on-device AI context usage), including mobile app scenarios. Supported languages: python, javascript/typescript, go."
 ---
 
 # Security Best Practices
@@ -8,6 +8,8 @@ description: "Perform language and framework specific security best-practice rev
 ## Overview
 
 This skill provides a description of how to identify the language and frameworks used by the current context, and then to load information from this skill's references directory about the security best practices for this language and or frameworks.
+
+This includes web and mobile contexts. For React Native or offline-first apps, include device-local data handling, mobile permission boundaries, and incident/emergency workflow abuse risks in the review scope.
 
 This information, if present, can be used to write new secure by default code, or to passively detect major issues within existing code, or (if requested by the user) provide a vulnerability report and suggest fixes.
 
@@ -31,11 +33,15 @@ From there it can operate in a few ways.
 
 3. The user can ask for a security report or to improve the security of the codebase. In this case a full report should be produced describe anyways the project fails to follow security best practices guidance. The report should be prioritized and have clear sections of severity and urgency. Then offer to start working on fixes for these issues. See #fixes below.
 
+4. For high-risk product domains (for example personal safety apps), security review is proactive by default when touching emergency logic, location data, identity/contact data, local logs, or model context.
+
 ## Workflow Decision Tree
 
 - If the language/framework is unclear, inspect the repo to determine it and list your evidence.
 - If matching guidance exists in `references/`, load only the relevant files and follow their instructions.
 - If no matching guidance exists, consider if you know any well known security best practices for the chosen language and or frameworks, but if asked to generate a report, let the user know that concrete guidance is not available (you can still generate the report or detect for sure critical vulnerabilities)
+
+For React Native tasks, include `javascript-typescript-react-native-mobile-security.md` when applicable.
 
 # Overrides
 

@@ -9,17 +9,20 @@ Implement mobile feature work in a strict, low-regression workflow for React Nat
 
 ## Workflow
 1. Inspect impacted screens/components, navigation paths, and related tests.
-2. Confirm current behavior before edits, including style behavior on different screen sizes.
+2. Confirm current behavior before edits, including style behavior on different screen sizes and offline state behavior when relevant.
 3. Implement the smallest React Native change that satisfies the request.
 4. Apply or adjust NativeWind utility classes for styling updates.
-5. Run verification checks (tests, lint/type checks, and build health checks when available).
-6. Summarize modified files, assumptions, and command outcomes.
+5. For SafePassage-critical flows (emergency, GPS/location, local storage, contacts, on-device AI context), invoke `security-best-practices` guidance by default.
+6. Run verification checks (tests, lint/type checks, and build health checks when available).
+7. Summarize modified files, assumptions, and command outcomes.
 
 ## Constraints
 - Avoid broad refactors unless explicitly requested.
 - Preserve existing project conventions and folder structure.
 - Prefer reusable UI primitives and shared style tokens when available.
 - Document assumptions before risky changes, especially around navigation and platform behavior.
+- Define degraded-mode behavior for offline or missing-data conditions.
+- For emergency workflows, keep user steps deterministic, clear, and fail-safe.
 - Do not change unrelated files.
 
 ## Styling Rules
@@ -32,6 +35,7 @@ Implement mobile feature work in a strict, low-regression workflow for React Nat
 - Use `scripts/run-rn-checks.ps1` for deterministic non-interactive checks.
 - Run with `-WhatIf` to preview commands.
 - When scripts are missing in `package.json`, the checker reports and skips them.
+- `expo-doctor` should run only for Expo projects.
 
 ## References
 - Read `references/react-native-nativewind-workflow.md` for setup assumptions, implementation order, and failure handling.

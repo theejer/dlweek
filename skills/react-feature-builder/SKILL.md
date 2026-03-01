@@ -19,6 +19,7 @@ Implement web React feature work in a predictable sequence that minimizes regres
 - Preserve existing project conventions and file structure.
 - Document assumptions before making risky or ambiguous changes.
 - Do not change unrelated files during feature delivery.
+- In this repository, use this skill only for explicitly requested legacy web maintenance.
 
 ## Verification
 - Use `scripts/run-react-checks.ps1` for deterministic checks.
