@@ -1,9 +1,16 @@
 import { View, TextInput, Button, Text } from "react-native";
+import { useRouter } from "expo-router";
 import { useUserProfile } from "@/features/user/hooks/useUserProfile";
 
 export function UserInfoForm() {
   // Minimal onboarding form for name + emergency contact phone.
+  const router = useRouter();
   const { profile, setProfile, saveProfile, isSaving } = useUserProfile();
+
+  async function onSavePress() {
+    await saveProfile();
+    router.replace("/trips");
+  }
 
   return (
     <View style={{ gap: 8 }}>
@@ -41,7 +48,7 @@ export function UserInfoForm() {
         }
         style={{ borderWidth: 1, borderColor: "#ccc", padding: 10, borderRadius: 8 }}
       />
-      <Button title={isSaving ? "Saving..." : "Save"} onPress={() => void saveProfile()} />
+      <Button title={isSaving ? "Saving..." : "Save"} onPress={() => void onSavePress()} />
       <Text style={{ color: "#666" }}>Profile is used for alerts and trip ownership.</Text>
     </View>
   );
