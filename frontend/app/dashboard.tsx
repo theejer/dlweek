@@ -1,11 +1,76 @@
 import { Link, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ScrollView, Text, TouchableOpacity, View } from "react-native";
+import { Alert, ScrollView, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useTrips } from "@/features/trips/hooks/useTrips";
 import { getItem } from "@/features/storage/services/localStore";
+import { Button } from "@/shared/components/Button";
+import { useRiskReport } from "@/features/risk/hooks/useRiskReport";
+import { analyzeTripRisk } from "@/features/risk/services/riskApi";
+import { getLatestItinerary } from "@/features/trips/services/itineraryApi";
 
 const ACTIVE_USER_ID_KEY = "active_user_id";
+
+function DashboardTripScore({ tripId }: { tripId: string }) {
+  const { report, loading } = useRiskReport(tripId);
+
+  if (loading) return <Text style={{ color: "#6b7280" }}>Score: ...</Text>;
+  if (!report?.score) return <Text style={{ color: "#6b7280" }}>Score: Not generated</Text>;
+
+  return (
+    <Text style={{ color: "#111827", fontWeight: "600" }}>
+      Score: {report.score.value}/100
+    </Text>
+  );
+}
+
+function DashboardTripActions({ tripId }: { tripId: string }) {
+  const router = useRouter();
+  const [generatingScore, setGeneratingScore] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  async function onGenerateScore() {
+    if (!tripId) {
+      setStatusMessage("Trip ID is missing.");
+      Alert.alert("Missing trip", "Trip ID is missing.");
+      return;
+    }
+
+    try {
+      setStatusMessage("Starting score generation...");
+      setGeneratingScore(true);
+      const days = await getLatestItinerary(tripId);
+      console.log("[DashboardTripActions] generate score click", { tripId, itineraryDays: days.length });
+
+      if (!days.length) {
+        setStatusMessage("No itinerary found; attempting analyzer call with empty itinerary...");
+      }
+
+      const report = await analyzeTripRisk(tripId, days);
+      setStatusMessage("Score generated.");
+      Alert.alert("Score ready", report.summary || "Risk analysis completed.");
+      router.push(`/trips/${tripId}/risk`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to generate score";
+      setStatusMessage(message);
+      Alert.alert("Score generation failed", message);
+    } finally {
+      setGeneratingScore(false);
+    }
+  }
+
+  return (
+    <View style={{ flexDirection: "row", gap: 12, flexWrap: "wrap" }}>
+      <Link href={`/trips/${tripId}`}>View Trip</Link>
+      <Link href={`/trips/${tripId}/edit`}>Edit Trip</Link>
+      <Button variant="outline" size="sm" block={false} onPress={() => void onGenerateScore()} disabled={generatingScore}>
+        {generatingScore ? "Generating score..." : "Generate Score"}
+      </Button>
+      <Link href={`/trips/${tripId}/risk`}>Open Risk</Link>
+      {statusMessage ? <Text style={{ color: "#6b7280" }}>{statusMessage}</Text> : null}
+    </View>
+  );
+}
 
 export default function DashboardScreen() {
   const router = useRouter();
@@ -52,12 +117,7 @@ export default function DashboardScreen() {
       <Text style={{ fontSize: 24, fontWeight: "700" }}>Dashboard</Text>
       <Text style={{ color: "#4b5563" }}>Manage your trips, view saved trips, and start a trip.</Text>
 
-      <TouchableOpacity
-        style={{ backgroundColor: "#1976d2", paddingVertical: 12, paddingHorizontal: 14, borderRadius: 8, alignItems: "center" }}
-        onPress={() => router.push("/trips")}
-      >
-        <Text style={{ color: "white", fontWeight: "600", fontSize: 16 }}>Create New Trip</Text>
-      </TouchableOpacity>
+      <Button onPress={() => router.push("/trips")}>Create New Trip</Button>
 
       <View style={{ borderWidth: 1, borderColor: "#d1d5db", borderRadius: 12, padding: 12, gap: 8, backgroundColor: "white" }}>
         <Text style={{ fontSize: 18, fontWeight: "700" }}>Saved Trips</Text>
@@ -80,11 +140,8 @@ export default function DashboardScreen() {
                 <Text style={{ color: "#4b5563" }}>
                   {trip.startDate} → {trip.endDate}
                 </Text>
-                <View style={{ flexDirection: "row", gap: 12 }}>
-                  <Link href={`/trips/${trip.id}`}>View Trip</Link>
-                  <Link href={`/trips/${trip.id}/start`}>Start Trip</Link>
-                  <Link href={`/trips/${trip.id}/risk`}>Open Risk</Link>
-                </View>
+                <DashboardTripScore tripId={trip.id} />
+                <DashboardTripActions tripId={trip.id} />
               </View>
             ))
           : null}

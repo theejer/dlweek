@@ -1,16 +1,19 @@
 import { useState } from "react";
-import { View, Text, TouchableOpacity, ScrollView, Button } from "react-native";
+import { View, Text, TouchableOpacity, ScrollView } from "react-native";
 import { Day } from "../types";
 import { DayEditor } from "./DayEditor";
+import { Button } from "@/shared/components/Button";
 
 type ItineraryReviewProps = {
   itinerary: { days: Day[] };
   onConfirm: (days: Day[]) => void;
   onCheckRisk: (days: Day[]) => void;
   onEdit: () => void;
+  saving?: boolean;
+  checkingRisk?: boolean;
 };
 
-export function ItineraryReview({ itinerary, onConfirm, onCheckRisk, onEdit }: ItineraryReviewProps) {
+export function ItineraryReview({ itinerary, onConfirm, onCheckRisk, onEdit, saving = false, checkingRisk = false }: ItineraryReviewProps) {
   const [days, setDays] = useState<Day[]>(itinerary.days);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "cards">("table");
@@ -165,19 +168,15 @@ export function ItineraryReview({ itinerary, onConfirm, onCheckRisk, onEdit }: I
       </View>
 
       <View style={{ gap: 8, flexDirection: "row" }}>
-        <Button
-          title="Edit File"
-          color="#999"
-          onPress={onEdit}
-        />
-        <Button
-          title="Save"
-          onPress={() => onConfirm(days)}
-        />
-        <Button
-          title="Check Risk"
-          onPress={() => onCheckRisk(days)}
-        />
+        <Button block={false} variant="outline" style={{ flex: 1 }} onPress={onEdit} disabled={saving || checkingRisk}>
+          Edit File
+        </Button>
+        <Button block={false} style={{ flex: 1 }} onPress={() => onConfirm(days)} disabled={saving || checkingRisk}>
+          {saving ? "Saving..." : "Save"}
+        </Button>
+        <Button block={false} variant="secondary" style={{ flex: 1 }} onPress={() => onCheckRisk(days)} disabled={checkingRisk || saving}>
+          {checkingRisk ? "Checking Risk..." : "Check Risk"}
+        </Button>
       </View>
     </ScrollView>
   );
