@@ -1,31 +1,36 @@
-import { env } from "@/shared/config/env";
+import { env, getBackendUrlCandidates } from "@/shared/config/env";
+import { getItem } from "@/features/storage/services/localStore";
+
+const AUTH_BEARER_TOKEN_KEY = "auth_bearer_token";
+
+async function getRequestHeaders() {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const token = await getItem(AUTH_BEARER_TOKEN_KEY);
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 async function request(method: string, path: string, body?: unknown) {
-  try {
-    console.log(`[API] ${method} ${env.BACKEND_URL}${path}`, body);
-    
-    const response = await fetch(`${env.BACKEND_URL}${path}`, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: body ? JSON.stringify(body) : undefined,
-    });
+  const urls = getBackendUrlCandidates();
+  let lastError: unknown = null;
 
-    console.log(`[API] Response status:`, response.status);
-    
-    if (!response.ok) {
-      const text = await response.text();
-      console.error(`[API] Error response:`, text);
-      throw new Error(`API ${method} ${path} failed: ${response.status} ${text}`);
-    }
+  for (let index = 0; index < urls.length; index += 1) {
+    const baseUrl = urls[index];
+    try {
+      const response = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: await getRequestHeaders(),
+        body: body ? JSON.stringify(body) : undefined,
+      });
 
-    return response.status === 204 ? null : response.json();
-  } catch (error) {
-    console.error(`[API] Fetch error:`, error);
-    if (error instanceof TypeError && error.message.includes("fetch")) {
-      throw new Error(`Cannot reach backend at ${env.BACKEND_URL} - is the server running?`);
-    }
-    throw error;
-  }
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`API ${method} ${path} failed: ${response.status} ${text}`);
+      }
+
+  return response.status === 204 ? null : response.json();
 }
 
 export const apiClient = {

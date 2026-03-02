@@ -34,8 +34,14 @@ From repo root:
 cd backend
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-py -3 -m pip install --upgrade pip
-py -3 -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+If `py -3 -m venv .venv` fails due to stale launcher mappings, use:
+
+```powershell
+uv venv .venv --python 3.11 --seed
 ```
 
 ## Environment Variables
@@ -55,6 +61,11 @@ $env:ANTHROPIC_API_KEY=""
 $env:TWILIO_ACCOUNT_SID=""
 $env:TWILIO_AUTH_TOKEN=""
 $env:TWILIO_FROM_NUMBER=""
+
+# Heartbeat watchdog scheduling
+$env:ENABLE_HEARTBEAT_SCHEDULER="0"
+$env:HEARTBEAT_WATCHDOG_INTERVAL_MINUTES="5"
+$env:HEARTBEAT_WATCHDOG_KEY=""
 ```
 
 ## Run the Backend
@@ -63,7 +74,7 @@ $env:TWILIO_FROM_NUMBER=""
 
 ```powershell
 cd backend
-py -3 wsgi.py
+.\.venv\Scripts\python.exe wsgi.py
 ```
 
 Then open healthcheck:
@@ -82,31 +93,31 @@ flask run --host 0.0.0.0 --port 5000
 ### Syntax sanity check
 
 ```powershell
-py -3 -m compileall app
+.\.venv\Scripts\python.exe -m compileall app
 ```
 
 ### Run tests
 
 ```powershell
-py -3 -m pytest tests -q
+.\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
 ### Run one test file
 
 ```powershell
-py -3 -m pytest tests/test_risk_engine.py -q
+.\.venv\Scripts\python.exe -m pytest tests/test_risk_engine.py -q
 ```
 
 ### Install missing test tooling (if needed)
 
 ```powershell
-py -3 -m pip install pytest
+.\.venv\Scripts\python.exe -m pip install pytest
 ```
 
 ### Freeze current environment (optional)
 
 ```powershell
-py -3 -m pip freeze > requirements.lock.txt
+.\.venv\Scripts\python.exe -m pip freeze > requirements.lock.txt
 ```
 
 ## Current API Endpoints (Scaffold)
@@ -120,7 +131,13 @@ py -3 -m pip freeze > requirements.lock.txt
 - `PUT /trips/<trip_id>/itinerary`
 - `GET /trips/<trip_id>/itinerary`
 - `POST /itinerary/analyze`
+- `POST /heartbeat` (JWT required, returns 204)
 - `POST /heartbeats`
+- `POST /heartbeats/watchdog/run` (internal key optional via `x-watchdog-key`)
+
+## Focused Guides
+
+- Heartbeat backend integration and controls: `HEARTBEAT.md`
 
 ## Notes
 
