@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { View, TextInput, TouchableOpacity, Text, Modal, ScrollView } from "react-native";
+import { View, TextInput, TouchableOpacity, Text, Modal, ScrollView, Alert } from "react-native";
 import { getItem } from "@/features/storage/services/localStore";
+import { userExistsRemotely } from "@/features/user/services/userApi";
+import { isLocalOnlyUserId } from "@/shared/utils/syncGuards";
 import { Button } from "@/shared/components/Button";
+
 
 const ACTIVE_USER_ID_KEY = "active_user_id";
 
@@ -163,6 +166,26 @@ export function TripForm({ mode, onMetadataSubmit }: TripFormProps) {
   };
 
   async function onSubmit() {
+    setValidationMessage(null);
+
+    const normalizedTitle = title.trim();
+    if (!normalizedTitle) {
+      setValidationMessage("Trip title is required.");
+      return;
+    }
+
+    const start = formatDateForAPI(startDate);
+    const end = formatDateForAPI(endDate);
+    if (!start || !end) {
+      setValidationMessage("Start date and end date are required.");
+      return;
+    }
+
+    if (start > end) {
+      setValidationMessage("End date must be on or after start date.");
+      return;
+    }
+
     if (mode === "create") {
       const normalizedTitle = title.trim();
       const normalizedStartDate = formatDateForAPI(startDate);

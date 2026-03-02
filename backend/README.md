@@ -176,6 +176,51 @@ Notes:
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
+### Run end-to-end smoke flow (API + DB)
+
+1) Start backend in one terminal:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe wsgi.py
+```
+
+2) In a second terminal, run smoke flow:
+
+```powershell
+cd backend
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --base-url http://127.0.0.1:5000 --cleanup
+```
+
+3) Expected result:
+- Every step prints `[PASS]`
+- Final line prints `Smoke flow PASSED.`
+
+Heartbeat mode options:
+
+```powershell
+# Expect auth-enforced heartbeat (401)
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --heartbeat-check auth
+
+# Expect demo fallback ingest (204) when HEARTBEAT_DEMO_AUTH_FALLBACK=1
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --heartbeat-check demo
+```
+
+Useful flags:
+
+```powershell
+# Skip direct DB checks
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --skip-db
+
+# Show all options
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --help
+```
+
+Troubleshooting:
+- If you still see an old error after code changes, restart backend before rerunning smoke (the local runner uses `use_reloader=False`).
+- If `health` fails, backend is not running or `--base-url` is wrong.
+- If `db_verify` fails, check `SQLALCHEMY_DATABASE_URI` in `backend/.env`.
+
 ### Run one test file
 
 ```powershell

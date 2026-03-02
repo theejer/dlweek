@@ -7,6 +7,7 @@ import json
 from uuid import UUID
 
 from sqlalchemy import text
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.extensions import get_db_engine
 
@@ -17,6 +18,11 @@ def _is_uuid(value: str) -> bool:
         return True
     except (ValueError, TypeError):
         return False
+
+
+def _is_missing_table_error(exc: Exception, table_name: str) -> bool:
+    message = str(exc).lower()
+    return f"no such table: {table_name}" in message or f'relation "{table_name}" does not exist' in message
 
 
 def save_risk_report(trip_id: str, report: dict) -> dict:
@@ -31,16 +37,21 @@ def save_risk_report(trip_id: str, report: dict) -> dict:
         RETURNING *
         """
     )
-    with get_db_engine().begin() as connection:
-        result = connection.execute(
-            query,
-            {
-                "trip_id": trip_id,
-                "report": json.dumps(report),
-                "summary": report.get("summary"),
-            },
-        )
-        row = result.mappings().first()
+    try:
+        with get_db_engine().begin() as connection:
+            result = connection.execute(
+                query,
+                {
+                    "trip_id": trip_id,
+                    "report": json.dumps(report),
+                    "summary": report.get("summary"),
+                },
+            )
+            row = result.mappings().first()
+    except (ProgrammingError, OperationalError) as exc:
+        if _is_missing_table_error(exc, "risk_reports"):
+            raise RuntimeError("risk_reports table is missing") from exc
+        raise
     return dict(row) if row else {}
 
 
@@ -58,7 +69,12 @@ def latest_risk_report(trip_id: str) -> dict:
         LIMIT 1
         """
     )
-    with get_db_engine().begin() as connection:
-        result = connection.execute(query, {"trip_id": trip_id})
-        row = result.mappings().first()
+    try:
+        with get_db_engine().begin() as connection:
+            result = connection.execute(query, {"trip_id": trip_id})
+            row = result.mappings().first()
+    except (ProgrammingError, OperationalError) as exc:
+        if _is_missing_table_error(exc, "risk_reports"):
+            raise RuntimeError("risk_reports table is missing") from exc
+        raise
     return dict(row) if row else {}

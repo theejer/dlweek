@@ -176,27 +176,45 @@ export async function analyzeTripRisk(tripId: string, days: Day[]): Promise<Risk
 
   const trip = await getTripById(tripId);
 
-  const response = (await apiClient.post("/itinerary/analyze-pipeline", {
-    trip_id: onlineTrip ? tripId : undefined,
-    trip_name: trip?.title,
-    start_date: trip?.startDate,
-    end_date: trip?.endDate,
-    itinerary: JSON.stringify({
-      days: toWireDays(days),
-      meta: { source: "user-reviewed-itinerary" },
-    }),
-    metadata: {
-      source: "user-reviewed-itinerary",
+  const startedAt = Date.now();
+  console.log("[analyzeTripRisk] calling /itinerary/analyze-pipeline", {
+    tripId,
+    onlineTrip,
+    dayCount: days.length,
+  });
+
+  let response: RiskReportWire;
+  try {
+    response = (await apiClient.post("/itinerary/analyze-pipeline", {
+      trip_id: onlineTrip ? tripId : undefined,
       trip_name: trip?.title,
       start_date: trip?.startDate,
       end_date: trip?.endDate,
-    },
-  })) as RiskReportWire;
+      itinerary: JSON.stringify({
+        days: toWireDays(days),
+        meta: { source: "user-reviewed-itinerary" },
+      }),
+      metadata: {
+        source: "user-reviewed-itinerary",
+        trip_name: trip?.title,
+        start_date: trip?.startDate,
+        end_date: trip?.endDate,
+      },
+    })) as RiskReportWire;
+  } catch (error) {
+    console.error("[analyzeTripRisk] /itinerary/analyze-pipeline request failed", {
+      tripId,
+      elapsedMs: Date.now() - startedAt,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 
   console.log("[analyzeTripRisk] pipeline response meta", {
     status: response.status,
     stage: response.stage,
     saved: response.saved,
+    elapsedMs: Date.now() - startedAt,
   });
 
   if (response.status === "failed") {
