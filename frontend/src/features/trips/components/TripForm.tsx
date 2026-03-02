@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { View, TextInput, TouchableOpacity, Text, Modal, ScrollView } from "react-native";
+import { View, TextInput, TouchableOpacity, Text, Modal, ScrollView, Alert } from "react-native";
 import { getItem } from "@/features/storage/services/localStore";
 import { userExistsRemotely } from "@/features/user/services/userApi";
 import { isLocalOnlyUserId } from "@/shared/utils/syncGuards";

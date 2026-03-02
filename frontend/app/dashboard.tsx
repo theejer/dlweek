@@ -4,10 +4,11 @@ import { Alert, ScrollView, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { useTrips } from "@/features/trips/hooks/useTrips";
 import { getItem } from "@/features/storage/services/localStore";
-import { Button } from "@/shared/components/Button";
 import { useRiskReport } from "@/features/risk/hooks/useRiskReport";
 import { analyzeTripRisk } from "@/features/risk/services/riskApi";
 import { getLatestItinerary } from "@/features/trips/services/itineraryApi";
+import type { Trip } from "@/features/trips/types";
+import { Button } from "@/shared/components/Button";
 
 const ACTIVE_USER_ID_KEY = "active_user_id";
 
@@ -24,35 +25,30 @@ function DashboardTripScore({ tripId }: { tripId: string }) {
   );
 }
 
-function DashboardTripActions({ tripId }: { tripId: string }) {
+function DashboardTripActions({ trip, onSaved }: { trip: Trip; onSaved: () => Promise<void> | void }) {
   const router = useRouter();
+  const tripId = trip.id;
   const [generatingScore, setGeneratingScore] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   async function onGenerateScore() {
     if (!tripId) {
-      setStatusMessage("Trip ID is missing.");
       Alert.alert("Missing trip", "Trip ID is missing.");
       return;
     }
 
     try {
-      setStatusMessage("Starting score generation...");
       setGeneratingScore(true);
       const days = await getLatestItinerary(tripId);
-      console.log("[DashboardTripActions] generate score click", { tripId, itineraryDays: days.length });
-
       if (!days.length) {
-        setStatusMessage("No itinerary found; attempting analyzer call with empty itinerary...");
+        Alert.alert("No itinerary yet", "Add or import itinerary first, then generate score.");
+        return;
       }
 
       const report = await analyzeTripRisk(tripId, days);
-      setStatusMessage("Score generated.");
       Alert.alert("Score ready", report.summary || "Risk analysis completed.");
       router.replace(`/trips/${tripId}/risk`);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to generate score";
-      setStatusMessage(message);
       Alert.alert("Score generation failed", message);
     } finally {
       setGeneratingScore(false);
@@ -70,7 +66,6 @@ function DashboardTripActions({ tripId }: { tripId: string }) {
       <Button variant="outline" size="sm" block={false} onPress={() => router.replace(`/trips/${tripId}/risk`)}>
         Open Risk
       </Button>
-      {statusMessage ? <Text style={{ color: "#6b7280" }}>{statusMessage}</Text> : null}
     </View>
   );
 }
@@ -144,7 +139,7 @@ export default function DashboardScreen() {
                   {trip.startDate} → {trip.endDate}
                 </Text>
                 <DashboardTripScore tripId={trip.id} />
-                <DashboardTripActions tripId={trip.id} />
+                <DashboardTripActions trip={trip} onSaved={reload} />
               </View>
             ))
           : null}
