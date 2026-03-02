@@ -40,6 +40,16 @@ type DayWireFlexible = {
   }>;
 };
 
+type ItineraryResponseWire = {
+  days?: DayWireFlexible[];
+  itinerary_json?: {
+    days?: DayWireFlexible[];
+  };
+  itinerary?: {
+    days?: DayWireFlexible[];
+  };
+};
+
 function toWireDays(days: Day[]): DayWire[] {
   return days.map((day) => ({
     date: day.date,
@@ -71,6 +81,18 @@ function fromWireDays(days: DayWireFlexible[]): Day[] {
   }));
 }
 
+function extractDaysFromItineraryResponse(response: ItineraryResponseWire, fallback: DayWireFlexible[] = []): Day[] {
+  const candidateDays = Array.isArray(response.days)
+    ? response.days
+    : Array.isArray(response.itinerary_json?.days)
+    ? response.itinerary_json?.days
+    : Array.isArray(response.itinerary?.days)
+    ? response.itinerary?.days
+    : fallback;
+
+  return fromWireDays(candidateDays ?? []);
+}
+
 async function isDeviceOffline() {
   try {
     const net = await NetInfo.fetch();
@@ -93,11 +115,10 @@ export async function upsertItinerary(tripId: string, days: Day[]) {
   // Then attempt to sync remotely
   if (canSyncItineraryOnline(tripId)) {
     try {
-      const response = (await apiClient.put(`/trips/${tripId}/itinerary`, { days: wireDays, meta: {} })) as {
-        days?: DayWire[];
-      };
+      const response = (await apiClient.put(`/trips/${tripId}/itinerary`, { days: wireDays, meta: {} })) as ItineraryResponseWire;
       // Update with server response if successful
-      await upsertLocalItinerary(tripId, fromWireDays(response.days ?? wireDays));
+      const normalizedDays = extractDaysFromItineraryResponse(response, wireDays);
+      await upsertLocalItinerary(tripId, normalizedDays);
       return response;
     } catch {
       // If remote sync fails, queue for retry
@@ -129,10 +150,13 @@ export async function getLatestItinerary(tripId: string) {
   }
 
   try {
-    const response = (await apiClient.get(`/trips/${tripId}/itinerary`)) as { days?: DayWire[] };
-    const normalizedDays = fromWireDays(response.days ?? []);
-    await upsertLocalItinerary(tripId, normalizedDays);
-    return normalizedDays;
+    const response = (await apiClient.get(`/trips/${tripId}/itinerary`)) as ItineraryResponseWire;
+    const normalizedDays = extractDaysFromItineraryResponse(response, []);
+    if (normalizedDays.length > 0) {
+      await upsertLocalItinerary(tripId, normalizedDays);
+      return normalizedDays;
+    }
+    return getItinerary(tripId);
   } catch {
     return getItinerary(tripId);
   }
@@ -166,7 +190,8 @@ export async function replayItinerarySyncJob(job: SyncQueueJob) {
   const response = (await apiClient.put(`/trips/${tripId}/itinerary`, {
     days: payload.days ?? [],
     meta: payload.meta ?? {},
-  })) as { days?: DayWire[] };
+  })) as ItineraryResponseWire;
 
-  await upsertLocalItinerary(tripId, fromWireDays(response.days ?? payload.days ?? []));
+  const normalizedDays = extractDaysFromItineraryResponse(response, payload.days ?? []);
+  await upsertLocalItinerary(tripId, normalizedDays);
 }

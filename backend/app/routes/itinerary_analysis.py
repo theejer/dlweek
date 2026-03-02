@@ -3,6 +3,7 @@
 Connects parser and risk engine services, then persists risk reports.
 """
 
+import time
 from uuid import uuid4
 
 from flask import Blueprint, jsonify, request
@@ -24,9 +25,27 @@ logger = get_logger(__name__)
 def analyze_pipeline_route():
     """Run integrated parser + multi-analyst + judge pipeline from backend service."""
     body = request.get_json(force=True) or {}
+    request_trip_id = str(body.get("trip_id") or "")
+    itinerary_length = len(str(body.get("itinerary") or ""))
+    started_at = time.perf_counter()
+
+    logger.info(
+        "Pipeline analyze request received trip_id=%s itinerary_chars=%s",
+        request_trip_id or "(none)",
+        itinerary_length,
+    )
+
     result = analyze_trip(body)
+    elapsed_ms = int((time.perf_counter() - started_at) * 1000)
 
     if result.get("status") != "ok":
+        logger.warning(
+            "Pipeline analyze failed trip_id=%s stage=%s elapsed_ms=%s details=%s",
+            request_trip_id or "(none)",
+            result.get("stage"),
+            elapsed_ms,
+            result.get("details"),
+        )
         return jsonify(result), 200
 
     final_report = result.get("final_report") if isinstance(result.get("final_report"), dict) else {}
@@ -42,6 +61,12 @@ def analyze_pipeline_route():
         **result,
         "saved": saved,
     }
+    logger.info(
+        "Pipeline analyze completed trip_id=%s elapsed_ms=%s saved=%s",
+        request_trip_id or "(none)",
+        elapsed_ms,
+        bool(saved),
+    )
     return jsonify(response), 200
 
 
