@@ -4,7 +4,7 @@ Itinerary analysis routes and parser services persist normalized itinerary JSON 
 """
 
 import json
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import text
 
@@ -26,8 +26,8 @@ def upsert_itinerary(trip_id: str, itinerary_json: dict) -> dict:
 
     query = text(
         """
-        INSERT INTO itineraries (trip_id, itinerary_json)
-        VALUES (:trip_id, CAST(:itinerary_json AS jsonb))
+        INSERT INTO itineraries (id, trip_id, itinerary_json)
+        VALUES (:id, :trip_id, CAST(:itinerary_json AS jsonb))
         ON CONFLICT (trip_id)
         DO UPDATE SET itinerary_json = EXCLUDED.itinerary_json
         RETURNING *
@@ -36,7 +36,11 @@ def upsert_itinerary(trip_id: str, itinerary_json: dict) -> dict:
     with get_db_engine().begin() as connection:
         result = connection.execute(
             query,
-            {"trip_id": trip_id, "itinerary_json": json.dumps(itinerary_json)},
+            {
+                "id": str(uuid4()),
+                "trip_id": trip_id,
+                "itinerary_json": json.dumps(itinerary_json),
+            },
         )
         row = result.mappings().first()
     return dict(row) if row else {}

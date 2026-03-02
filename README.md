@@ -18,6 +18,7 @@ This repository hosts the SafePassage hackathon build: an offline-first safety c
 - Heartbeat backend integration and controls: [backend/HEARTBEAT.md](backend/HEARTBEAT.md)
 - Heartbeat frontend runtime and integration: [frontend/src/features/heartbeat/README.md](frontend/src/features/heartbeat/README.md)
 - SQLite/offline storage guide: [frontend/src/features/storage/README.md](frontend/src/features/storage/README.md)
+- Backend smoke flow runbook (API + DB): [backend/README.md](backend/README.md)
 
 ## Deterministic Connectivity Predictor (Standalone)
 
