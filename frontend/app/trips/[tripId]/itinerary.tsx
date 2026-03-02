@@ -63,24 +63,34 @@ export default function ItineraryEditorScreen() {
     void load();
   }, [normalizedTripId]);
 
-  async function onSavePress() {
-    if (!normalizedTripId) {
-      Alert.alert("Missing trip", "Trip ID is missing.");
-      return;
-    }
-
-    try {
-      validateDays(days);
-      setSaving(true);
-      await upsertItinerary(normalizedTripId, days);
-      Alert.alert("Saved", "Itinerary saved. If offline, it will sync when connected.");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to save itinerary";
-      Alert.alert("Save failed", message);
-    } finally {
-      setSaving(false);
-    }
+ async function onSavePress() {
+  if (!normalizedTripId) {
+    Alert.alert("Missing trip", "Trip ID is missing.");
+    return;
   }
+
+  try {
+    validateDays(days);
+    setSaving(true);
+
+    await upsertItinerary(normalizedTripId, days);
+
+    Alert.alert("Saved", "Itinerary saved successfully.", [
+      {
+        text: "OK",
+        onPress: () => {
+          router.replace("/dashboard");
+        },
+      },
+    ]);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to save itinerary";
+    Alert.alert("Save failed", message);
+  } finally {
+    setSaving(false);
+  }
+}
 
   async function onCheckRiskPress() {
     if (!normalizedTripId) {
