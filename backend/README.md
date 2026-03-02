@@ -176,6 +176,22 @@ Notes:
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
+### Run end-to-end smoke flow (API + DB)
+
+```powershell
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --base-url http://127.0.0.1:5000 --cleanup
+```
+
+Heartbeat mode options:
+
+```powershell
+# Expect auth-enforced heartbeat (401)
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --heartbeat-check auth
+
+# Expect demo fallback ingest (204) when HEARTBEAT_DEMO_AUTH_FALLBACK=1
+.\.venv\Scripts\python.exe tools\smoke_user_flow.py --heartbeat-check demo
+```
+
 ### Run one test file
 
 ```powershell
