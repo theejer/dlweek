@@ -27,9 +27,31 @@ def create_app(config_name: str | None = None) -> Flask:
     """
     app = Flask(__name__)
     app.config.from_object(get_config(config_name))
+    
+    # Parse CORS origins from config
+    # In production, expect comma-separated string: "https://app1.railway.app,https://app2.railway.app"
+    # In development, fall back to ["*"] for convenience
+    cors_origins_config = app.config.get("CORS_ORIGINS", [])
+    
+    # Handle string config (from environment variables)
+    if isinstance(cors_origins_config, str):
+        # Remove empty strings and strip whitespace
+        cors_origins = [o.strip() for o in cors_origins_config.split(',') if o.strip()]
+        if not cors_origins:
+            # Empty string provided, use wildcard for development
+            if app.config.get("DEBUG", False) or app.config.get("APP_CONFIG") == "development":
+                cors_origins = ["*"]
+            else:
+                app.logger.warning("CORS_ORIGINS is empty and APP_CONFIG is production. All CORS requests will be rejected.")
+                cors_origins = []
+    else:
+        cors_origins = cors_origins_config if isinstance(cors_origins_config, list) else ["*"]
+    
+    app.logger.info(f"CORS configured for origins: {cors_origins}")
+    
     CORS(
         app,
-        resources={r"/*": {"origins": app.config.get("CORS_ORIGINS", ["*"])}},
+        resources={r"/*": {"origins": cors_origins}},
         supports_credentials=app.config.get("CORS_ALLOW_CREDENTIALS", False),
         allow_headers=["Authorization", "Content-Type", "Cache-Control"],
         methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -38,12 +60,18 @@ def create_app(config_name: str | None = None) -> Flask:
     @app.after_request
     def _ensure_cors_headers(response):
         origin = request.headers.get("Origin")
-        allowed_origins = app.config.get("CORS_ORIGINS", ["*"])
+        allowed_origins = cors_origins
+        
+        # Handle wildcard origins
         if "*" in allowed_origins:
             response.headers["Access-Control-Allow-Origin"] = "*"
         elif origin and origin in allowed_origins:
             response.headers["Access-Control-Allow-Origin"] = origin
             response.headers["Vary"] = "Origin"
+        elif origin:
+            # Log unmatched origins in production for debugging
+            app.logger.debug(f"CORS origin not allowed: {origin}")
+        
         response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, Cache-Control"
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
         return response
