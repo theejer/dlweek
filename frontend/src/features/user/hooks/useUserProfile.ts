@@ -10,9 +10,13 @@ const ACTIVE_USER_PROFILE_KEY = "active_user_profile";
 export function useUserProfile() {
   const [profile, setProfile] = useState<UserProfile>({ fullName: "", phone: "" });
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
 
   async function saveProfile() {
     setIsSaving(true);
+    setError(null);
+    setSuccess(false);
     try {
       const normalizedFullName = profile.fullName.trim();
       const normalizedPhone = profile.phone.trim();
@@ -57,5 +61,5 @@ export function useUserProfile() {
     }
   }
 
-  return { profile, setProfile, isSaving, saveProfile };
+  return { profile, setProfile, isSaving, saveProfile, error, success };
 }

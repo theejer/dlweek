@@ -9,6 +9,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
 from flask import Flask
+from flask_cors import CORS
 
 from app.config import get_config
 from app.extensions import init_extensions
@@ -24,6 +25,10 @@ def create_app(config_name: str | None = None) -> Flask:
     """
     app = Flask(__name__)
     app.config.from_object(get_config(config_name))
+    
+    # Enable CORS for web frontend and mobile clients
+    CORS(app, resources={r"/*": {"origins": "*"}})
+    
     app.register_blueprint(reports_bp)
     init_extensions(app)
 
