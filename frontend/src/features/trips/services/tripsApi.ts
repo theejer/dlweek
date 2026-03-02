@@ -86,9 +86,9 @@ export async function createTrip(payload: TripCreateInput) {
 
 export async function listTrips(userId: string) {
   await initializeOfflineDb();
+  const localItems = await listLocalTrips(userId);
 
   if (!canSyncTripOnline(userId)) {
-    const localItems = await listLocalTrips(userId);
     return { items: localItems };
   }
 
@@ -100,9 +100,18 @@ export async function listTrips(userId: string) {
     for (const trip of normalizedItems) {
       await upsertTrip(trip);
     }
-    return { items: normalizedItems };
+
+    const mergedById = new Map<string, Trip>();
+    for (const localTrip of localItems) {
+      mergedById.set(localTrip.id, localTrip);
+    }
+    for (const remoteTrip of normalizedItems) {
+      mergedById.set(remoteTrip.id, remoteTrip);
+    }
+
+    const merged = [...mergedById.values()].sort((a, b) => b.startDate.localeCompare(a.startDate));
+    return { items: merged };
   } catch {
-    const localItems = await listLocalTrips(userId);
     return { items: localItems };
   }
 }
