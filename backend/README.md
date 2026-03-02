@@ -79,6 +79,9 @@ $env:ANTHROPIC_API_KEY=""
 $env:TWILIO_ACCOUNT_SID=""
 $env:TWILIO_AUTH_TOKEN=""
 $env:TWILIO_FROM_NUMBER=""
+$env:TELEGRAM_BOT_TOKEN=""
+$env:TELEGRAM_BOT_ENABLED="0"
+$env:TELEGRAM_POLL_INTERVAL_SECONDS="2"
 
 # Heartbeat watchdog scheduling
 $env:ENABLE_HEARTBEAT_SCHEDULER="0"
@@ -211,5 +214,6 @@ Notes:
 ## Notes
 
 - This backend is scaffold-first: routes/services/models are intentionally minimal with comments for fast agentic iteration.
-- Some integrations are placeholders (Twilio/FCM/email dispatch logic is stubbed).
+- Telegram emergency alerting is supported via bot polling (`/start` + phone number activation).
+- Some integrations remain placeholders (SMS/FCM/email dispatch logic is stubbed).
 - For production, add auth hardening, request rate limits, and encrypted handling for sensitive location/incident data.
