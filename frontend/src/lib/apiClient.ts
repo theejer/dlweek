@@ -30,7 +30,26 @@ async function request(method: string, path: string, body?: unknown) {
         throw new Error(`API ${method} ${path} failed: ${response.status} ${text}`);
       }
 
-  return response.status === 204 ? null : response.json();
+      return response.status === 204 ? null : response.json();
+    } catch (error) {
+      lastError = error;
+      const isLastCandidate = index === urls.length - 1;
+      if (!isLastCandidate) {
+        continue;
+      }
+    }
+  }
+
+  if (lastError instanceof Error) {
+    if (lastError.message.includes("Network request failed")) {
+      throw new Error(
+        `Network request failed. Checked backend URLs: ${urls.join(", ")}. Ensure backend is running and reachable from your device.`
+      );
+    }
+    throw lastError;
+  }
+
+  throw new Error(`API ${method} ${path} failed at ${env.BACKEND_URL}`);
 }
 
 export const apiClient = {

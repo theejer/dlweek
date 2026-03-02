@@ -1,7 +1,7 @@
 """Shared extension/client initialization.
 
 This module initializes reusable infrastructure objects used across
-models and services, such as the Supabase client and logger.
+models and services, with SQLAlchemy as the primary data engine.
 """
 
 from __future__ import annotations
@@ -21,16 +21,24 @@ def init_extensions(app: Flask) -> None:
     """Initialize external clients and framework-wide logging.
 
     Interactions:
-    - Reads credentials from Flask config (loaded in app factory)
-    - Exposes Supabase client consumed by app.models.* wrappers
+    - Initializes SQLAlchemy engine for persistence
+    - Optionally initializes Supabase client for auth-related integrations
     """
     global supabase_client, sqlalchemy_engine
 
     logging.basicConfig(level=logging.INFO)
 
     url = app.config.get("SUPABASE_URL")
-    if url and key:
-        supabase_client = create_client(url, key)
+    key = app.config.get("SUPABASE_KEY")
+
+    if url and key and not url.startswith("https://your-"):
+        try:
+            supabase_client = create_client(url, key)
+        except Exception as e:
+            app.logger.warning(f"Supabase initialization failed: {e}. Continuing in degraded mode.")
+    else:
+        app.logger.info("Supabase auth integration not configured; continuing with SQLAlchemy-backed data access.")
+
     sqlalchemy_uri = app.config.get("SQLALCHEMY_DATABASE_URI")
     if sqlalchemy_uri:
         sqlalchemy_engine = create_engine(sqlalchemy_uri, pool_pre_ping=True)
