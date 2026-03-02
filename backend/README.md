@@ -206,6 +206,7 @@ Notes:
 - `POST /heartbeat` (JWT required, returns 204)
 - `POST /heartbeats`
 - `POST /heartbeats/watchdog/run` (internal key optional via `x-watchdog-key`)
+- `POST /incidents/sync`
 
 ## Focused Guides
 
@@ -216,4 +217,5 @@ Notes:
 - This backend is scaffold-first: routes/services/models are intentionally minimal with comments for fast agentic iteration.
 - Telegram emergency alerting is supported via bot polling (`/start` + phone number activation).
 - Some integrations remain placeholders (SMS/FCM/email dispatch logic is stubbed).
+- Persistence guardrail: direct Supabase SDK table writes are blocked by tests; DB writes should flow through SQLAlchemy-backed model helpers.
 - For production, add auth hardening, request rate limits, and encrypted handling for sensitive location/incident data.
