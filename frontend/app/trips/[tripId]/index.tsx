@@ -41,6 +41,7 @@ export default function TripDashboardScreen() {
   }
 
   return (
+<<<<<<< HEAD
     <View style={{ flex: 1, padding: 16, gap: 10 }}>
       <Text style={{ fontSize: 20, fontWeight: "700" }}>{trip?.title ?? "Trip"}</Text>
       <RiskSummary tripId={String(tripId)} />
