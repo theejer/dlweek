@@ -437,6 +437,24 @@ export async function getTripById(tripId: string) {
   } as Trip;
 }
 
+export async function deleteItineraryByTripId(tripId: string) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM itinerary_locations WHERE trip_id = ?", [tripId]);
+    await db.runAsync("DELETE FROM itinerary_days WHERE trip_id = ?", [tripId]);
+  });
+}
+
+export async function deleteTripById(tripId: string) {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    await db.runAsync("DELETE FROM itinerary_locations WHERE trip_id = ?", [tripId]);
+    await db.runAsync("DELETE FROM itinerary_days WHERE trip_id = ?", [tripId]);
+    await db.runAsync("DELETE FROM risk_reports WHERE trip_id = ?", [tripId]);
+    await db.runAsync("DELETE FROM trips WHERE id = ?", [tripId]);
+  });
+}
+
 export async function upsertItinerary(tripId: string, days: Day[]) {
   const db = await getDb();
   const timestamp = nowIso();
