@@ -18,9 +18,8 @@ create table if not exists emergency_contacts (
   user_id uuid not null references users(id) on delete cascade,
   name text not null,
   phone text not null,
-  email text,
-  relationship text,
-  is_primary boolean not null default false,
+  telegram_chat_id text,
+  telegram_bot_active boolean not null default false,
   created_at timestamptz not null default now()
 );
 

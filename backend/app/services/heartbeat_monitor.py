@@ -8,16 +8,24 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from flask import current_app, has_app_context
+
 from app.models.alerts import create_alert_event, has_recent_stage_alert
 from app.models.itinerary_segments import list_segments_for_trip
 from app.models.traveler_status import get_status_for_trip, list_open_statuses, update_status, upsert_status
 from app.models.trips import get_trip_by_id, list_active_heartbeat_trips
 from app.models.users import get_user_by_id
-from app.services.notifications import send_sms_alert
+from app.services.notifications import send_telegram_alert
 
 STAGE_1 = "stage_1_initial_alert"
 STAGE_2 = "stage_2_escalation"
 STAGE_3 = "stage_3_auto_reconnection"
+
+
+def _is_force_stage_1_test_mode() -> bool:
+    if not has_app_context():
+        return False
+    return bool(current_app.config.get("HEARTBEAT_FORCE_STAGE_1_TEST_MODE", False))
 
 
 def _parse_iso(iso_text: str) -> datetime:
@@ -77,26 +85,31 @@ def _build_recipients(user: dict, emergency_phone: str | None) -> list[dict]:
 
     profile_contact = user.get("emergency_contact") if isinstance(user, dict) else None
     if isinstance(profile_contact, dict):
-        recipients.append(
-            {
-                "type": "emergency_contact",
-                "name": profile_contact.get("name"),
-                "phone": profile_contact.get("phone"),
-                "email": profile_contact.get("email"),
-            }
-        )
+        telegram_chat_id = profile_contact.get("telegram_chat_id")
+        telegram_bot_active = bool(profile_contact.get("telegram_bot_active"))
+        if telegram_chat_id and telegram_bot_active:
+            recipients.append(
+                {
+                    "type": "emergency_contact",
+                    "name": profile_contact.get("name"),
+                    "phone": profile_contact.get("phone"),
+                    "telegram_chat_id": str(telegram_chat_id),
+                    "telegram_bot_active": True,
+                }
+            )
 
     if emergency_phone:
-        recipients.append({"type": "runtime_emergency_phone", "phone": emergency_phone})
+        recipients.append({"type": "runtime_emergency_phone", "phone": emergency_phone, "delivery": "unlinked"})
 
     deduped: list[dict] = []
     seen = set()
     for recipient in recipients:
-        phone = recipient.get("phone")
-        if phone and phone in seen:
+        chat_id = recipient.get("telegram_chat_id")
+        key = chat_id or recipient.get("phone")
+        if key and key in seen:
             continue
-        if phone:
-            seen.add(phone)
+        if key:
+            seen.add(key)
         deduped.append(recipient)
 
     return deduped
@@ -110,10 +123,17 @@ def _send_and_record_stage_alert(
     recipients: list[dict],
     escalation_context: dict | None = None,
 ) -> dict:
+    bot_token = ""
+    if has_app_context():
+        bot_token = current_app.config.get("TELEGRAM_BOT_TOKEN", "")
+
+    delivered_channels: set[str] = set()
     for recipient in recipients:
-        phone = recipient.get("phone")
-        if phone:
-            send_sms_alert(phone, message)
+        chat_id = recipient.get("telegram_chat_id")
+        if chat_id:
+            result = send_telegram_alert(str(chat_id), message, bot_token=bot_token)
+            if result.get("queued"):
+                delivered_channels.add("telegram")
 
     payload = {
         "id": str(uuid4()),
@@ -121,7 +141,7 @@ def _send_and_record_stage_alert(
         "trip_id": trip_id,
         "stage": stage,
         "message": message,
-        "channels": ["sms"],
+        "channels": sorted(delivered_channels),
         "recipients": recipients,
         "escalation_context": escalation_context or {},
     }
@@ -187,27 +207,38 @@ def evaluate_status_for_alert(status: dict, now_utc: datetime) -> dict:
     if not trip or not trip.get("heartbeat_enabled", True):
         return {"trip_id": trip_id, "status": "skipped-heartbeat-disabled"}
 
+    force_stage_1_test_mode = _is_force_stage_1_test_mode()
+
     last_seen_at = status.get("last_seen_at")
-    if not last_seen_at:
+    if not last_seen_at and not force_stage_1_test_mode:
         return {"trip_id": trip_id, "status": "skipped-no-last-seen"}
 
-    last_seen_dt = _parse_iso(last_seen_at)
-    offline_duration_minutes = max(0, int((now_utc - last_seen_dt).total_seconds() // 60))
+    offline_duration_minutes = 0
+    if last_seen_at:
+        last_seen_dt = _parse_iso(last_seen_at)
+        offline_duration_minutes = max(0, int((now_utc - last_seen_dt).total_seconds() // 60))
 
-    expected = derive_expected_offline_minutes(trip_id)
     connectivity_risk = status.get("connectivity_risk", "moderate")
     battery_percent = status.get("last_battery_percent")
-    multiplier = _risk_multiplier(connectivity_risk, battery_percent, now_utc)
+    adjusted_expected = 0
+    stage_1_threshold = 0
+    stage_2_threshold = 0
 
-    adjusted_expected = max(15, int(expected * multiplier))
-    stage_1_threshold = adjusted_expected
-    stage_2_threshold = max(int(adjusted_expected * 1.8), adjusted_expected + 30)
+    if not force_stage_1_test_mode:
+        expected = derive_expected_offline_minutes(trip_id)
+        multiplier = _risk_multiplier(connectivity_risk, battery_percent, now_utc)
+        adjusted_expected = max(15, int(expected * multiplier))
+        stage_1_threshold = adjusted_expected
+        stage_2_threshold = max(int(adjusted_expected * 1.8), adjusted_expected + 30)
 
     trigger_stage = "none"
-    if offline_duration_minutes >= stage_2_threshold:
-        trigger_stage = STAGE_2
-    elif offline_duration_minutes >= stage_1_threshold:
+    if force_stage_1_test_mode:
         trigger_stage = STAGE_1
+    else:
+        if offline_duration_minutes >= stage_2_threshold:
+            trigger_stage = STAGE_2
+        elif offline_duration_minutes >= stage_1_threshold:
+            trigger_stage = STAGE_1
 
     current_stage = status.get("current_stage", "none")
     if trigger_stage == "none" or trigger_stage == current_stage:
@@ -225,17 +256,23 @@ def evaluate_status_for_alert(status: dict, now_utc: datetime) -> dict:
     user = get_user_by_id(user_id)
     recipients = _build_recipients(user, status.get("emergency_phone"))
 
-    message = (
-        f"SafePassage Alert: traveler offline for {offline_duration_minutes} minutes on trip {trip_id}. "
-        f"Expected window was {adjusted_expected} minutes."
-    )
+    if force_stage_1_test_mode:
+        message = (
+            f"[TEST MODE] SafePassage Alert: Stage 1 triggered for heartbeat-enabled trip {trip_id}."
+        )
+    else:
+        message = (
+            f"SafePassage Alert: traveler offline for {offline_duration_minutes} minutes on trip {trip_id}. "
+            f"Expected window was {adjusted_expected} minutes."
+        )
     escalation_context = {
-        "threshold_rule": "offline > expected * multiplier",
+        "threshold_rule": "forced-stage-1-test-mode" if force_stage_1_test_mode else "offline > expected * multiplier",
         "location_risk": status.get("location_risk", "moderate"),
         "connectivity_risk": connectivity_risk,
         "battery_percent": battery_percent,
         "last_seen_lat": status.get("last_seen_lat"),
         "last_seen_lng": status.get("last_seen_lng"),
+        "test_mode": force_stage_1_test_mode,
     }
     _send_and_record_stage_alert(
         user_id=user_id,

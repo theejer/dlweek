@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from flask import Flask
+
 from app import create_app
 from app.models.heartbeats import insert_heartbeat
 from app.services import heartbeat_monitor
@@ -141,7 +143,7 @@ def test_watchdog_timer_and_emergency_alert_for_enabled_trip(monkeypatch):
     now = datetime(2026, 3, 2, 12, 0, 0, tzinfo=timezone.utc)
     last_seen = now - timedelta(minutes=180)
 
-    sent_sms: list[tuple[str, str]] = []
+    sent_telegram: list[tuple[str, str]] = []
     created_alerts: list[dict] = []
     status_updates: list[dict] = []
 
@@ -196,13 +198,18 @@ def test_watchdog_timer_and_emergency_alert_for_enabled_trip(monkeypatch):
         "get_user_by_id",
         lambda _user_id: {
             "id": "usr_1",
-            "emergency_contact": {"name": "Ravi", "phone": "+919100000001"},
+            "emergency_contact": {
+                "name": "Ravi",
+                "phone": "+919100000001",
+                "telegram_chat_id": "123456",
+                "telegram_bot_active": True,
+            },
         },
     )
     monkeypatch.setattr(
         heartbeat_monitor,
-        "send_sms_alert",
-        lambda phone, message: sent_sms.append((phone, message)) or {"queued": True},
+        "send_telegram_alert",
+        lambda chat_id, message, bot_token=None: sent_telegram.append((chat_id, message)) or {"queued": True},
     )
     monkeypatch.setattr(
         heartbeat_monitor,
@@ -232,14 +239,14 @@ def test_watchdog_timer_and_emergency_alert_for_enabled_trip(monkeypatch):
     }
 
     assert len(created_alerts) == 1
-    assert len(sent_sms) >= 1
+    assert len(sent_telegram) >= 1
     assert any(update["updates"].get("current_stage") for update in status_updates)
 
 
 def test_reconnection_triggers_stage3_auto_recovery_alert(monkeypatch):
     """When user reconnects after prior escalation, stage-3 recovery alert is emitted."""
     created_alerts: list[dict] = []
-    sent_sms: list[tuple[str, str]] = []
+    sent_telegram: list[tuple[str, str]] = []
     status_updates: list[dict] = []
 
     monkeypatch.setattr(
@@ -259,13 +266,18 @@ def test_reconnection_triggers_stage3_auto_recovery_alert(monkeypatch):
         "get_user_by_id",
         lambda _user_id: {
             "id": "usr_1",
-            "emergency_contact": {"name": "Ravi", "phone": "+919100000001"},
+            "emergency_contact": {
+                "name": "Ravi",
+                "phone": "+919100000001",
+                "telegram_chat_id": "123456",
+                "telegram_bot_active": True,
+            },
         },
     )
     monkeypatch.setattr(
         heartbeat_monitor,
-        "send_sms_alert",
-        lambda phone, message: sent_sms.append((phone, message)) or {"queued": True},
+        "send_telegram_alert",
+        lambda chat_id, message, bot_token=None: sent_telegram.append((chat_id, message)) or {"queued": True},
     )
     monkeypatch.setattr(
         heartbeat_monitor,
@@ -298,7 +310,7 @@ def test_reconnection_triggers_stage3_auto_recovery_alert(monkeypatch):
 
     assert len(created_alerts) == 1
     assert created_alerts[0]["stage"] == heartbeat_monitor.STAGE_3
-    assert len(sent_sms) >= 1
+    assert len(sent_telegram) >= 1
     assert "back online" in created_alerts[0]["message"].lower()
 
     assert len(status_updates) == 1
@@ -309,7 +321,7 @@ def test_reconnection_triggers_stage3_auto_recovery_alert(monkeypatch):
 def test_reconnection_does_not_trigger_stage3_when_still_offline(monkeypatch):
     """Do not emit recovery when new heartbeat is not online."""
     created_alerts: list[dict] = []
-    sent_sms: list[tuple[str, str]] = []
+    sent_telegram: list[tuple[str, str]] = []
     status_updates: list[dict] = []
 
     monkeypatch.setattr(
@@ -329,13 +341,18 @@ def test_reconnection_does_not_trigger_stage3_when_still_offline(monkeypatch):
         "get_user_by_id",
         lambda _user_id: {
             "id": "usr_1",
-            "emergency_contact": {"name": "Ravi", "phone": "+919100000001"},
+            "emergency_contact": {
+                "name": "Ravi",
+                "phone": "+919100000001",
+                "telegram_chat_id": "123456",
+                "telegram_bot_active": True,
+            },
         },
     )
     monkeypatch.setattr(
         heartbeat_monitor,
-        "send_sms_alert",
-        lambda phone, message: sent_sms.append((phone, message)) or {"queued": True},
+        "send_telegram_alert",
+        lambda chat_id, message, bot_token=None: sent_telegram.append((chat_id, message)) or {"queued": True},
     )
     monkeypatch.setattr(
         heartbeat_monitor,
@@ -366,14 +383,14 @@ def test_reconnection_does_not_trigger_stage3_when_still_offline(monkeypatch):
 
     assert result["current_stage"] == heartbeat_monitor.STAGE_1
     assert created_alerts == []
-    assert sent_sms == []
+    assert sent_telegram == []
     assert status_updates == []
 
 
 def test_reconnection_does_not_trigger_stage3_when_prior_stage_none(monkeypatch):
     """Do not emit recovery when there was no prior escalation stage."""
     created_alerts: list[dict] = []
-    sent_sms: list[tuple[str, str]] = []
+    sent_telegram: list[tuple[str, str]] = []
     status_updates: list[dict] = []
 
     monkeypatch.setattr(
@@ -390,8 +407,8 @@ def test_reconnection_does_not_trigger_stage3_when_prior_stage_none(monkeypatch)
     monkeypatch.setattr(heartbeat_monitor, "upsert_status", lambda payload: payload)
     monkeypatch.setattr(
         heartbeat_monitor,
-        "send_sms_alert",
-        lambda phone, message: sent_sms.append((phone, message)) or {"queued": True},
+        "send_telegram_alert",
+        lambda chat_id, message, bot_token=None: sent_telegram.append((chat_id, message)) or {"queued": True},
     )
     monkeypatch.setattr(
         heartbeat_monitor,
@@ -422,5 +439,72 @@ def test_reconnection_does_not_trigger_stage3_when_prior_stage_none(monkeypatch)
 
     assert result["current_stage"] == "none"
     assert created_alerts == []
-    assert sent_sms == []
+    assert sent_telegram == []
     assert status_updates == []
+
+
+def test_force_stage_1_test_mode_alerts_even_without_last_seen(monkeypatch):
+    app = Flask("test")
+    app.config["HEARTBEAT_FORCE_STAGE_1_TEST_MODE"] = True
+
+    created_alerts: list[dict] = []
+    sent_telegram: list[tuple[str, str]] = []
+    status_updates: list[dict] = []
+
+    monkeypatch.setattr(
+        heartbeat_monitor,
+        "get_trip_by_id",
+        lambda _trip_id: {"id": "trp_1", "user_id": "usr_1", "heartbeat_enabled": True},
+    )
+    monkeypatch.setattr(heartbeat_monitor, "has_recent_stage_alert", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        heartbeat_monitor,
+        "get_user_by_id",
+        lambda _user_id: {
+            "id": "usr_1",
+            "emergency_contact": {
+                "name": "Ravi",
+                "phone": "+919100000001",
+                "telegram_chat_id": "123456",
+                "telegram_bot_active": True,
+            },
+        },
+    )
+    monkeypatch.setattr(
+        heartbeat_monitor,
+        "send_telegram_alert",
+        lambda chat_id, message, bot_token=None: sent_telegram.append((chat_id, message)) or {"queued": True},
+    )
+    monkeypatch.setattr(
+        heartbeat_monitor,
+        "create_alert_event",
+        lambda payload: created_alerts.append(payload) or payload,
+    )
+    monkeypatch.setattr(
+        heartbeat_monitor,
+        "update_status",
+        lambda user_id, trip_id, updates: status_updates.append(
+            {"user_id": user_id, "trip_id": trip_id, "updates": updates}
+        )
+        or {"ok": True},
+    )
+
+    status = {
+        "id": "sts_1",
+        "user_id": "usr_1",
+        "trip_id": "trp_1",
+        "last_seen_at": None,
+        "current_stage": "none",
+        "monitoring_state": "active",
+    }
+
+    with app.app_context():
+        result = heartbeat_monitor.evaluate_status_for_alert(status, datetime(2026, 3, 2, 12, 0, 0, tzinfo=timezone.utc))
+
+    assert result["status"] == "alerted"
+    assert result["trigger_stage"] == heartbeat_monitor.STAGE_1
+    assert len(created_alerts) == 1
+    assert created_alerts[0]["escalation_context"]["test_mode"] is True
+    assert len(sent_telegram) == 1
+    assert "[TEST MODE]" in created_alerts[0]["message"]
+    assert len(status_updates) == 1

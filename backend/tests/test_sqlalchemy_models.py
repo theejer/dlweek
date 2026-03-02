@@ -134,7 +134,7 @@ def test_alert_event_create_and_recent_check(monkeypatch):
     def strategy(sql: str, params: dict):
         if "INSERT INTO alert_events" in sql:
             assert params["user_id"] == user_id
-            assert json.loads(params["channels"]) == ["sms"]
+            assert json.loads(params["channels"]) == ["telegram"]
             return [{"id": params["id"], "user_id": user_id, "trip_id": trip_id}]
         if "FROM alert_events" in sql:
             assert params["stage"] == "stage_1_initial_alert"
@@ -150,7 +150,7 @@ def test_alert_event_create_and_recent_check(monkeypatch):
             "trip_id": trip_id,
             "stage": "stage_1_initial_alert",
             "message": "msg",
-            "channels": ["sms"],
+            "channels": ["telegram"],
             "recipients": [{"phone": "+919999999999"}],
             "escalation_context": {"x": 1},
         }
