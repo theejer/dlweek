@@ -9,14 +9,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends gcc libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY . .
-
-# Copy database schema and initialization scripts
-COPY scripts/ scripts/
+COPY backend/ .
+COPY contracts/ /contracts/
 
 RUN adduser --disabled-password --gecos "" appuser \
     && chown -R appuser:appuser /app \

@@ -83,21 +83,33 @@ Set these minimum values:
 	- `EXPO_PUBLIC_BACKEND_URL=http://localhost:5000`
 - `backend/.env`
 	- `APP_CONFIG=development`
-	- `OPENAI_API_KEY=<optional-but-needed-for-itinerary-analysis>`
+	- `OPENAI_API_KEY=<input-your-openai-APIKey-here>`
 
 Notes:
 - Backend works with local SQLite by default if `SQLALCHEMY_DATABASE_URI` is not set.
 - `SUPABASE_URL` / `SUPABASE_KEY` are optional for local judge runs unless testing Supabase-linked behavior.
+- You can get your OpenAI key from <a href="https://platform.openai.com/api-keys">OpenAI's platform</a>
 
 ### 3) Start backend (Docker)
 From repository root:
 
 ```powershell
-docker compose up --build backend
+docker compose up --build -d backend
 ```
 
 Healthcheck:
 - `http://localhost:5000/health`
+
+Notes:
+- This command now starts both `backend` and its `postgres` dependency automatically.
+- First boot may take 20-60 seconds while Postgres becomes healthy and schema initializes.
+
+Useful checks:
+
+```powershell
+docker compose ps
+docker compose logs -f backend
+```
 
 ### 4) Start frontend (Expo)
 In a second terminal:
@@ -157,6 +169,7 @@ Required bot env values:
 - Expo cache issues: run `npx expo start -c`.
 - Backend container fails early: verify `backend/.env` exists and Docker Desktop is running.
 - Itinerary analysis errors with 401/LLM failure: verify `OPENAI_API_KEY`.
+- If you see `Schema file not found: /contracts/db/schema_outline.sql` or repeated `PostgreSQL not ready` loops, pull latest repo changes and rebuild with `docker compose up --build backend`.
 
 ## Docker Helper Script (Optional)
 

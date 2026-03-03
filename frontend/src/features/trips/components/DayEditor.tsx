@@ -38,12 +38,14 @@ export function DayEditor({ dayIndex, day, onChange, onRemove }: DayEditorProps)
   return (
     <View style={{ borderWidth: 1, borderColor: "#ddd", borderRadius: 8, padding: 10, gap: 8 }}>
       <Text style={{ fontWeight: "700" }}>Day {dayIndex + 1}</Text>
+      <Text style={{ fontSize: 12, color: "#6b7280", fontWeight: "600" }}>Date</Text>
       <TextInput
         placeholder="Date (YYYY-MM-DD)"
         value={day.date}
         autoCapitalize="none"
         onChangeText={(value) => onChange({ ...day, date: value })}
       />
+      <Text style={{ fontSize: 12, color: "#6b7280", fontWeight: "600" }}>Accommodation</Text>
       <TextInput
         placeholder="Accommodation"
         value={day.accommodation ?? ""}
