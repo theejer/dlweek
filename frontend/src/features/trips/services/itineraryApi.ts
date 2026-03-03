@@ -50,6 +50,22 @@ type ItineraryResponseWire = {
   };
 };
 
+const UPLOAD_TIMEOUT_MS = 40000;
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = UPLOAD_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function toWireDays(days: Day[]): DayWire[] {
   return days.map((day) => ({
     date: day.date,
@@ -164,20 +180,51 @@ export async function getLatestItinerary(tripId: string) {
 
 // Upload itinerary document and extract structured itinerary.
 export async function uploadItineraryPDF(formData: FormData) {
-  const env = await import("@/shared/config/env").then(m => m.env);
-  
-  const response = await fetch(`${env.BACKEND_URL}/trips/upload-pdf`, {
-    method: "POST",
-    body: formData,
-  });
+  const { env, getBackendUrlCandidates } = await import("@/shared/config/env");
+  const urls = getBackendUrlCandidates();
+  let lastError: unknown = null;
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to upload itinerary file: ${response.status} ${error}`);
+  for (let index = 0; index < urls.length; index += 1) {
+    const baseUrl = urls[index];
+    try {
+      const response = await fetchWithTimeout(`${baseUrl}/trips/upload-pdf`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to upload itinerary file: ${response.status} ${error}`);
+      }
+
+      const result = (await response.json()) as { days?: DayWireFlexible[] };
+      return fromWireDays(result.days ?? []);
+    } catch (error) {
+      lastError = error;
+      const isLastCandidate = index === urls.length - 1;
+      if (!isLastCandidate) {
+        continue;
+      }
+    }
   }
 
-  const result = (await response.json()) as { days?: DayWireFlexible[] };
-  return fromWireDays(result.days ?? []);
+  if (lastError instanceof Error && lastError.message.includes("Network request failed")) {
+    throw new Error(
+      `Network request failed while uploading itinerary. Checked backend URLs: ${urls.join(", ")}. Ensure backend is running and reachable from your phone.`
+    );
+  }
+
+  if (lastError instanceof Error && lastError.name === "AbortError") {
+    throw new Error(
+      `Upload request timed out. Checked backend URLs: ${urls.join(", ")}. Ensure backend is reachable from your phone.`
+    );
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError;
+  }
+
+  throw new Error(`Failed to upload itinerary file at ${env.BACKEND_URL}`);
 }
 
 export async function replayItinerarySyncJob(job: SyncQueueJob) {

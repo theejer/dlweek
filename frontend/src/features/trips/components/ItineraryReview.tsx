@@ -53,7 +53,6 @@ export function ItineraryReview({
             const newDays = [...days];
             newDays[editingIndex] = updatedDay;
             setDays(newDays);
-            setEditingIndex(null);
           }}
           onRemove={() => {
             const newDays = days.filter((_, idx) => idx !== editingIndex);
@@ -61,6 +60,11 @@ export function ItineraryReview({
             setEditingIndex(null);
           }}
         />
+        <View style={{ marginTop: 12 }}>
+          <Button block={false} variant="outline" onPress={() => setEditingIndex(null)}>
+            Done Editing
+          </Button>
+        </View>
       </ScrollView>
     );
   }

@@ -3,13 +3,43 @@ import { Platform } from "react-native";
 
 const DEFAULT_BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? "http://localhost:5000";
 
-function parseDevHostUrl() {
-  const hostUri = Constants.expoConfig?.hostUri ?? null;
-  if (!hostUri) return null;
+function extractHost(raw: string | null | undefined) {
+  if (!raw) return null;
 
-  const host = hostUri.split(":")[0];
-  if (!host) return null;
-  return `http://${host}:5000`;
+  const normalized = raw.replace(/^https?:\/\//, "").split("/")[0]?.trim();
+  if (!normalized) return null;
+
+  const host = normalized.split(":")[0]?.trim();
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
+    return null;
+  }
+
+  return host;
+}
+
+function parseDevHostUrl() {
+  const constantsAny = Constants as unknown as {
+    expoGoConfig?: { debuggerHost?: string };
+    manifest2?: { extra?: { expoClient?: { hostUri?: string } } };
+    manifest?: { debuggerHost?: string };
+    expoConfig?: { hostUri?: string };
+  };
+
+  const candidateHostUris = [
+    constantsAny.expoConfig?.hostUri,
+    constantsAny.expoGoConfig?.debuggerHost,
+    constantsAny.manifest2?.extra?.expoClient?.hostUri,
+    constantsAny.manifest?.debuggerHost,
+  ];
+
+  for (const uri of candidateHostUris) {
+    const host = extractHost(uri);
+    if (host) {
+      return `http://${host}:5000`;
+    }
+  }
+
+  return null;
 }
 
 export function isLocalhostUrl(url: string) {
@@ -24,13 +54,15 @@ export function getBackendUrlCandidates() {
   const candidates = [DEFAULT_BACKEND_URL];
 
   if (isLocalhostUrl(DEFAULT_BACKEND_URL)) {
+    const devHostUrl = parseDevHostUrl();
     if (Platform.OS !== "web") {
+      if (devHostUrl) {
+        candidates.unshift(devHostUrl);
+      }
+
       candidates.push(DEFAULT_BACKEND_URL.replace("localhost", "10.0.2.2"));
       candidates.push(DEFAULT_BACKEND_URL.replace("127.0.0.1", "10.0.2.2"));
-    }
-
-    const devHostUrl = parseDevHostUrl();
-    if (devHostUrl) {
+    } else if (devHostUrl) {
       candidates.push(devHostUrl);
     }
   }
