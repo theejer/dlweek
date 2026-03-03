@@ -6,27 +6,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc libpq-dev curl \
+    && apt-get install -y --no-install-recommends gcc libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backend/requirements.txt ./requirements.txt
+COPY requirements.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-COPY backend/ .
-COPY contracts/ /contracts/
+COPY . .
 
 RUN adduser --disabled-password --gecos "" appuser \
-    && chown -R appuser:appuser /app \
-    && sed -i 's/\r$//' docker-entrypoint.sh \
-    && chmod +x docker-entrypoint.sh
+    && chown -R appuser:appuser /app
 
 USER appuser
 
 EXPOSE 5000
 
-# Health check for container orchestration (Railway, Docker, etc.)
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:5000/health || exit 1
-
-ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120", "wsgi:app"]

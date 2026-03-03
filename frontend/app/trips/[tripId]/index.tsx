@@ -200,10 +200,8 @@ export default function TripDetailScreen() {
         <Text style={{ fontSize: 12, fontWeight: "700", color: tripUiColors.mutedLabel, letterSpacing: 0.6 }}>
           TRIP DETAILS
         </Text>
-        <Text style={{ fontSize: 12, color: "#6b7280", fontWeight: "600" }}>Trip Title</Text>
         <TextInput
           placeholder="Trip title"
-          placeholderTextColor="#9ca3af"
           value={title}
           onChangeText={setTitle}
           style={{
@@ -212,16 +210,12 @@ export default function TripDetailScreen() {
             borderRadius: 10,
             padding: 12,
             fontSize: 16,
-            color: "#111827",
             backgroundColor: "#ffffff",
           }}
         />
         <View style={{ flexDirection: "row", gap: 8 }}>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={{ fontSize: 12, color: "#6b7280", fontWeight: "600" }}>Start Date</Text>
           <TextInput
             placeholder="Start date (YYYY-MM-DD)"
-            placeholderTextColor="#9ca3af"
             value={startDate}
             onChangeText={onStartDateChange}
             style={{
@@ -231,16 +225,11 @@ export default function TripDetailScreen() {
               borderRadius: 10,
               padding: 12,
               fontSize: 14,
-              color: "#111827",
               backgroundColor: "#ffffff",
             }}
           />
-          </View>
-          <View style={{ flex: 1, gap: 4 }}>
-            <Text style={{ fontSize: 12, color: "#6b7280", fontWeight: "600" }}>End Date</Text>
           <TextInput
             placeholder="End date (YYYY-MM-DD)"
-            placeholderTextColor="#9ca3af"
             value={endDate}
             onChangeText={onEndDateChange}
             style={{
@@ -250,11 +239,9 @@ export default function TripDetailScreen() {
               borderRadius: 10,
               padding: 12,
               fontSize: 14,
-              color: "#111827",
               backgroundColor: "#ffffff",
             }}
           />
-          </View>
         </View>
         <Button onPress={() => void onSaveTripMetadata()} loading={savingTrip} size="sm">
           Save Trip Details

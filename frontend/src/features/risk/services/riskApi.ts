@@ -1,5 +1,5 @@
 import { apiClient } from "@/lib/apiClient";
-import type { RiskReport, DayRisk } from "@/features/risk/types";
+import type { RiskReport } from "@/features/risk/types";
 import type { Day } from "@/features/trips/types";
 import {
   cacheRiskReport,
@@ -60,8 +60,6 @@ type FinalDayWire = {
   day_id?: string;
   ACTIVITY?: FinalActivityWire[];
 };
-
-const ANALYZE_PIPELINE_TIMEOUT_MS = 120000;
 
 function pipelineFinalReportToRiskDays(finalReport: Record<string, unknown> | undefined): RiskDayWire[] {
   const finalDays = (finalReport?.DAY ?? finalReport?.["DAY"]) as FinalDayWire[] | undefined;
@@ -202,7 +200,7 @@ export async function analyzeTripRisk(tripId: string, days: Day[]): Promise<Risk
         start_date: trip?.startDate,
         end_date: trip?.endDate,
       },
-    }, { timeoutMs: ANALYZE_PIPELINE_TIMEOUT_MS })) as RiskReportWire;
+    })) as RiskReportWire;
   } catch (error) {
     console.error("[analyzeTripRisk] /itinerary/analyze-pipeline request failed", {
       tripId,
@@ -229,7 +227,7 @@ export async function analyzeTripRisk(tripId: string, days: Day[]): Promise<Risk
   return normalized;
 }
 
-// Fetches risk analysis data from aggregated itinerary_risks for PREVENTION screens.
+// Fetches risk analysis data for PREVENTION screens.
 export async function getRiskReport(tripId: string): Promise<RiskReport | null> {
   await initializeOfflineDb();
 
@@ -239,63 +237,16 @@ export async function getRiskReport(tripId: string): Promise<RiskReport | null> 
 
   try {
     const response = (await apiClient.get(`/api/reports?trip_id=${encodeURIComponent(tripId)}`)) as {
-      items?: Array<{ summary?: string; all_risks?: Array<Record<string, unknown>>; stats?: Record<string, unknown> }>;
+      items?: Array<{ report?: RiskReportWire }>;
     };
-    const latest = response.items?.[0];
+    const latest = response.items?.[0]?.report;
     if (!latest) {
       return getLatestRiskReport(tripId);
     }
 
-    // Transform aggregated risk response into RiskReport format
-    const allRisks = (latest.all_risks ?? []) as Array<Record<string, unknown>>;
-    
-    // Group risks by day_order to create DayRisk[] structure
-    const risksByDay = new Map<number, Map<string, { locationRisk: string; connectivityRisk: string; expectedOfflineMinutes: number }>>();
-    
-    for (const risk of allRisks) {
-      const dayOrder = (risk.day_order as number) ?? 0;
-      const locationName = (risk.location_name as string) ?? "Unknown";
-      const riskLevel = (risk.risk_level as string) ?? "MODERATE";
-      const connectivityRisk = (risk.connectivity_risk as string) ?? "MODERATE";
-      const expectedOffline = (risk.expected_offline_minutes as number) ?? 0;
-      
-      if (!risksByDay.has(dayOrder)) {
-        risksByDay.set(dayOrder, new Map());
-      }
-      
-      const dayMap = risksByDay.get(dayOrder)!;
-      if (!dayMap.has(locationName)) {
-        dayMap.set(locationName, {
-          locationRisk: riskLevel.toUpperCase(),
-          connectivityRisk: connectivityRisk.toUpperCase(),
-          expectedOfflineMinutes: expectedOffline,
-        });
-      }
-    }
-
-    // Convert map to DayRisk[] array
-    const days: DayRisk[] = Array.from(risksByDay.entries())
-      .sort(([orderA], [orderB]) => orderA - orderB)
-      .map(([dayOrder, locations]) => ({
-        date: `Day ${dayOrder + 1}`,
-        locations: Array.from(locations.entries()).map(([name, risk]) => ({
-          name,
-          ...risk,
-        })),
-      }));
-
-    const report: RiskReport = {
-      days,
-      summary: (latest.summary as string) ?? "Risk analysis completed.",
-      recommendations: [],
-      score: {
-        value: Math.round(((latest.stats as Record<string, unknown>)?.avg_confidence as number ?? 0.7) * 100),
-        justification: `Based on ${(latest.stats as Record<string, unknown>)?.total_risks ?? 0} identified risks.`,
-      },
-    };
-
-    await cacheRiskReport(tripId, report);
-    return report;
+    const normalized = fromWireReport(latest);
+    await cacheRiskReport(tripId, normalized);
+    return normalized;
   } catch {
     return getLatestRiskReport(tripId);
   }
