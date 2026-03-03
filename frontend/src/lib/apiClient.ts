@@ -2,6 +2,7 @@ import { env, getBackendUrlCandidates } from "@/shared/config/env";
 import { getItem } from "@/features/storage/services/localStore";
 
 const AUTH_BEARER_TOKEN_KEY = "auth_bearer_token";
+const REQUEST_TIMEOUT_MS = 9500;
 
 async function getRequestHeaders() {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -12,6 +13,20 @@ async function getRequestHeaders() {
   return headers;
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function request(method: string, path: string, body?: unknown) {
   const urls = getBackendUrlCandidates();
   let lastError: unknown = null;
@@ -19,7 +34,7 @@ async function request(method: string, path: string, body?: unknown) {
   for (let index = 0; index < urls.length; index += 1) {
     const baseUrl = urls[index];
     try {
-      const response = await fetch(`${baseUrl}${path}`, {
+      const response = await fetchWithTimeout(`${baseUrl}${path}`, {
         method,
         headers: await getRequestHeaders(),
         body: body ? JSON.stringify(body) : undefined,
@@ -41,6 +56,11 @@ async function request(method: string, path: string, body?: unknown) {
   }
 
   if (lastError instanceof Error) {
+    if (lastError.name === "AbortError") {
+      throw new Error(
+        `Backend request timed out. Checked backend URLs: ${urls.join(", ")}. Ensure backend is reachable from your device.`
+      );
+    }
     if (lastError.message.includes("Network request failed")) {
       throw new Error(
         `Network request failed. Checked backend URLs: ${urls.join(", ")}. Ensure backend is running and reachable from your device.`
