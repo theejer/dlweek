@@ -8,13 +8,8 @@ services:
       - ./backend/.env
     environment:
       APP_CONFIG: production
-      SQLALCHEMY_DATABASE_URI: sqlite:////app/data/safepassage.db
+      SQLALCHEMY_DATABASE_URI: sqlite:////app/safepassage.db
       ENABLE_HEARTBEAT_SCHEDULER: "0"
     ports:
       - "5000:5000"
-    volumes:
-      - safepassage_data:/app/data
     restart: unless-stopped
-
-volumes:
-  safepassage_data:
