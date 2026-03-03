@@ -4,6 +4,10 @@ import { getItem } from "@/features/storage/services/localStore";
 const AUTH_BEARER_TOKEN_KEY = "auth_bearer_token";
 const REQUEST_TIMEOUT_MS = 9500;
 
+type RequestOptions = {
+  timeoutMs?: number;
+};
+
 async function getRequestHeaders() {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const token = await getItem(AUTH_BEARER_TOKEN_KEY);
@@ -27,9 +31,10 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = REQU
   }
 }
 
-async function request(method: string, path: string, body?: unknown) {
+async function request(method: string, path: string, body?: unknown, options?: RequestOptions) {
   const urls = getBackendUrlCandidates();
   let lastError: unknown = null;
+  const timeoutMs = options?.timeoutMs ?? REQUEST_TIMEOUT_MS;
 
   for (let index = 0; index < urls.length; index += 1) {
     const baseUrl = urls[index];
@@ -38,7 +43,7 @@ async function request(method: string, path: string, body?: unknown) {
         method,
         headers: await getRequestHeaders(),
         body: body ? JSON.stringify(body) : undefined,
-      });
+      }, timeoutMs);
 
       if (!response.ok) {
         const text = await response.text();
@@ -73,9 +78,9 @@ async function request(method: string, path: string, body?: unknown) {
 }
 
 export const apiClient = {
-  get: (path: string) => request("GET", path),
-  post: (path: string, body?: unknown) => request("POST", path, body),
-  put: (path: string, body?: unknown) => request("PUT", path, body),
-  patch: (path: string, body?: unknown) => request("PATCH", path, body),
-  delete: (path: string) => request("DELETE", path),
+  get: (path: string, options?: RequestOptions) => request("GET", path, undefined, options),
+  post: (path: string, body?: unknown, options?: RequestOptions) => request("POST", path, body, options),
+  put: (path: string, body?: unknown, options?: RequestOptions) => request("PUT", path, body, options),
+  patch: (path: string, body?: unknown, options?: RequestOptions) => request("PATCH", path, body, options),
+  delete: (path: string, options?: RequestOptions) => request("DELETE", path, undefined, options),
 };

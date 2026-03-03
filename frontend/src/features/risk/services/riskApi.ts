@@ -61,6 +61,8 @@ type FinalDayWire = {
   ACTIVITY?: FinalActivityWire[];
 };
 
+const ANALYZE_PIPELINE_TIMEOUT_MS = 120000;
+
 function pipelineFinalReportToRiskDays(finalReport: Record<string, unknown> | undefined): RiskDayWire[] {
   const finalDays = (finalReport?.DAY ?? finalReport?.["DAY"]) as FinalDayWire[] | undefined;
   if (!Array.isArray(finalDays)) return [];
@@ -200,7 +202,7 @@ export async function analyzeTripRisk(tripId: string, days: Day[]): Promise<Risk
         start_date: trip?.startDate,
         end_date: trip?.endDate,
       },
-    })) as RiskReportWire;
+    }, { timeoutMs: ANALYZE_PIPELINE_TIMEOUT_MS })) as RiskReportWire;
   } catch (error) {
     console.error("[analyzeTripRisk] /itinerary/analyze-pipeline request failed", {
       tripId,
