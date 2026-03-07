@@ -18,7 +18,7 @@ except Exception:
     OPENAI_AVAILABLE = False
 
 DEFAULT_MODEL = "gpt-5.2"
-ANALYZER_MODEL = "gpt-4.1-nano"
+ANALYZER_MODEL = "gpt-5.2"
 ALLOWED_LOCATION_TYPES = {"visit", "transit", "activity"}
 NEWS_API_BASE_URL = "https://newsapi.org/v2/everything"
 NEWS_HAZARD_TERMS = ["protest", "unrest", "curfew", "flood", "outbreak", "strike", '"travel advisory"']
