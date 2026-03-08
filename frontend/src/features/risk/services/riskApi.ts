@@ -44,6 +44,11 @@ type RiskReportWire = {
   analyst_reports?: Record<string, unknown>;
   final_report?: Record<string, unknown>;
   saved?: Record<string, unknown>;
+  DAY?: FinalDayWire[];
+  SCORE?: {
+    value?: number;
+    justification?: string;
+  };
 };
 
 type FinalRiskWire = {
@@ -105,11 +110,25 @@ function pipelineFinalReportToRiskDays(finalReport: Record<string, unknown> | un
 
 function resolvePipelineSummary(report: RiskReportWire): string {
   if (report.summary) return report.summary;
-  const score = (report.final_report as { SCORE?: { value?: number } } | undefined)?.SCORE?.value;
+  const directSummary = (report as Record<string, unknown>)?.summary;
+  if (typeof directSummary === "string" && directSummary.trim()) return directSummary;
+  const score =
+    (report.final_report as { SCORE?: { value?: number } } | undefined)?.SCORE?.value ??
+    report.SCORE?.value;
   if (typeof score === "number") {
     return `Pipeline risk analysis completed. Score: ${score}/100.`;
   }
   return "Pipeline risk analysis completed.";
+}
+
+function resolveFinalReport(report: RiskReportWire): Record<string, unknown> | undefined {
+  if (report.final_report && typeof report.final_report === "object") {
+    return report.final_report;
+  }
+  if (Array.isArray(report.DAY) || (report.SCORE && typeof report.SCORE === "object")) {
+    return report as unknown as Record<string, unknown>;
+  }
+  return undefined;
 }
 
 function toWireDays(days: Day[]) {
@@ -126,7 +145,7 @@ function toWireDays(days: Day[]) {
 }
 
 function fromWireReport(report: RiskReportWire): RiskReport {
-  const finalReport = report.final_report as Record<string, unknown> | undefined;
+  const finalReport = resolveFinalReport(report);
   const finalScore = (finalReport as { SCORE?: { value?: number; justification?: string } } | undefined)?.SCORE;
   const wireDays = (report.days ?? []).length ? (report.days ?? []) : pipelineFinalReportToRiskDays(finalReport);
 
@@ -141,7 +160,9 @@ function fromWireReport(report: RiskReportWire): RiskReport {
         expectedOfflineMinutes: location.expected_offline_minutes ?? 0,
       })),
     })),
-    recommendations: report.recommendations ?? [],
+    recommendations:
+      report.recommendations ??
+      ((finalReport as { recommendations?: string[] } | undefined)?.recommendations ?? []),
     score: report.score
       ? {
           value: Number(report.score.value ?? 0),

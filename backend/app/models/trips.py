@@ -6,7 +6,7 @@ Trip routes and monitoring tasks use this module to read/write trip metadata.
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
-from sqlalchemy.exc import OperationalError, ProgrammingError
+from sqlalchemy.exc import IntegrityError, OperationalError, ProgrammingError
 
 from app.extensions import get_db_engine
 
@@ -27,6 +27,14 @@ def _is_missing_table_error(exc: Exception, table_name: str) -> bool:
 def _is_missing_column_error(exc: Exception, column_name: str) -> bool:
     message = str(exc).lower()
     return f"no such column: {column_name}" in message or f'column "{column_name}"' in message
+
+
+def _is_unique_id_conflict(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "unique constraint failed: trips.id" in message
+        or 'duplicate key value violates unique constraint "trips_pkey"' in message
+    )
 
 
 def _ensure_trips_table_for_sqlite() -> None:
@@ -112,6 +120,13 @@ def create_trip(payload: dict) -> dict:
 
     try:
         row = _insert_once()
+    except IntegrityError as exc:
+        if not _is_unique_id_conflict(exc):
+            raise
+        existing = get_trip_by_id(trip_id)
+        if existing:
+            return existing
+        raise
     except (ProgrammingError, OperationalError) as exc:
         if not _is_missing_table_error(exc, "trips"):
             raise

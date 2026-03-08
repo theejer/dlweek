@@ -17,7 +17,7 @@ except Exception:
     OpenAI = None
     OPENAI_AVAILABLE = False
 
-DEFAULT_MODEL = "gpt-5.2"
+DEFAULT_MODEL = os.getenv("PIPELINE_DEFAULT_MODEL", "gpt-4.1-mini")
 ANALYZER_MODEL = "gpt-4.1-nano"
 ALLOWED_LOCATION_TYPES = {"visit", "transit", "activity"}
 NEWS_API_BASE_URL = "https://newsapi.org/v2/everything"
@@ -125,6 +125,34 @@ PARSER_OUTPUT_SCHEMA = {
                         "lng": None,
                         "is_overnight": True,
                     },
+                },
+            }
+        ],
+    }
+}
+
+PARSER_COMPACT_OUTPUT_SCHEMA = {
+    "trip": {
+        "trip_id": "temp-uuid",
+        "title": None,
+        "start_date": None,
+        "end_date": None,
+        "destination_country": None,
+        "home_country": None,
+        "days": [
+            {
+                "day_id": "day-1",
+                "date": None,
+                "label": "Day 1",
+                "day_notes": None,
+                "locations": [
+                    {
+                        "type": "visit",
+                        "name": None,
+                    }
+                ],
+                "accommodation": {
+                    "name": None,
                 },
             }
         ],
@@ -314,20 +342,41 @@ def _parse_json_object(raw_text: str) -> tuple[dict[str, Any] | None, str | None
     return parsed, None
 
 
-def _openai_chat_json(prompt: str, *, system: str, model: str, temperature: float = 0.1) -> tuple[dict[str, Any] | None, str | None, str]:
+def _openai_chat_json(
+    prompt: str,
+    *,
+    system: str,
+    model: str,
+    temperature: float = 0.1,
+    max_tokens_override: int | None = None,
+    enforce_json_object: bool = False,
+) -> tuple[dict[str, Any] | None, str | None, str]:
     ok, error = has_openai_config()
     if not ok:
         return None, error, ""
 
+    request_timeout_seconds = max(15, min(_as_int(os.getenv("OPENAI_REQUEST_TIMEOUT_SECONDS"), 45), 180))
+    max_tokens = max(400, min(_as_int(os.getenv("OPENAI_CHAT_MAX_TOKENS"), 1800), 4000))
+    if max_tokens_override is not None:
+        max_tokens = max(400, min(int(max_tokens_override), 8000))
+
     client = get_openai_client()
     try:
-        response = client.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            messages=[
+        request_payload = {
+            "model": model,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "timeout": request_timeout_seconds,
+            "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
+        }
+        if enforce_json_object:
+            request_payload["response_format"] = {"type": "json_object"}
+
+        response = client.chat.completions.create(
+            **request_payload,
         )
         raw = (response.choices[0].message.content or "").strip()
     except Exception as exc:
@@ -779,6 +828,8 @@ def normalize_parser_output(parsed: dict[str, Any], *, parser_context: dict[str,
         normalized_locations: list[dict[str, Any]] = []
 
         for loc_index, location in enumerate(locations_raw, start=1):
+            if isinstance(location, str):
+                location = {"name": location}
             if not isinstance(location, dict):
                 continue
 
@@ -952,15 +1003,51 @@ def parser_agent(
         "4) country_code should be ISO-2 when known (e.g., IN, JP).\n"
         "5) trip.destination_country must be ISO-2 when known (e.g., JP, SG, MY).\n"
         "6) When form-provided trip context is present, use it to fill trip.title/start_date/end_date/destination_country.\n"
-        "7) Unknown values should be null.\n"
+        "7) Keep output compact: omit optional null fields when possible.\n"
+        "8) For large itineraries, preserve all days but keep per-location fields minimal.\n"
         "Schema:\n"
-        f"{json.dumps(PARSER_OUTPUT_SCHEMA, indent=2)}\n\n"
+        f"{json.dumps(PARSER_COMPACT_OUTPUT_SCHEMA, indent=2)}\n\n"
         f"{context_block}"
         "ITINERARY_START\n"
         f"{user_itinerary}\n"
         "ITINERARY_END"
     )
-    parsed, error, raw = _openai_chat_json(prompt, system=PARSER_SYSTEM_PROMPT, model=model)
+    parser_max_tokens = max(1200, min(_as_int(os.getenv("OPENAI_PARSER_MAX_TOKENS"), 3200), 8000))
+    parsed, error, raw = _openai_chat_json(
+        prompt,
+        system=PARSER_SYSTEM_PROMPT,
+        model=model,
+        max_tokens_override=parser_max_tokens,
+        enforce_json_object=True,
+    )
+
+    if error and "Invalid JSON response" in error:
+        retry_prompt = (
+            f"Request ID: {request_tag}-retry\n"
+            "Your previous answer was invalid JSON. Retry and output valid JSON only.\n"
+            "Use the exact schema below and keep it compact.\n"
+            "Rules:\n"
+            "1) Do not include markdown fences.\n"
+            "2) Omit optional null-only subfields.\n"
+            "3) Keep only key itinerary entities while preserving all days.\n"
+            "Schema:\n"
+            f"{json.dumps(PARSER_COMPACT_OUTPUT_SCHEMA, indent=2)}\n\n"
+            f"{context_block}"
+            "ITINERARY_START\n"
+            f"{user_itinerary}\n"
+            "ITINERARY_END"
+        )
+        parsed_retry, retry_error, retry_raw = _openai_chat_json(
+            retry_prompt,
+            system=PARSER_SYSTEM_PROMPT,
+            model=model,
+            max_tokens_override=parser_max_tokens,
+            enforce_json_object=True,
+        )
+        if not retry_error:
+            return normalize_parser_output(parsed_retry or {}, parser_context=normalized_context)
+        return {"error": retry_error, "raw": retry_raw}
+
     if error:
         return {"error": error, "raw": raw}
     return normalize_parser_output(parsed or {}, parser_context=normalized_context)
@@ -1797,6 +1884,73 @@ def _should_run_risk_judge(day_output: list[dict[str, Any]], severity_counts: di
     return False
 
 
+def _extract_summary_metrics(day_output: list[dict[str, Any]]) -> tuple[int, int, dict[str, int]]:
+    day_count = len([day for day in day_output if isinstance(day, dict)])
+    activity_count = 0
+    severity_counts = {"high": 0, "medium": 0, "low": 0}
+
+    for day in day_output:
+        if not isinstance(day, dict):
+            continue
+        activities = day.get("ACTIVITY") if isinstance(day.get("ACTIVITY"), list) else []
+        activity_count += len([activity for activity in activities if isinstance(activity, dict)])
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+            risks = activity.get("RISK") if isinstance(activity.get("RISK"), list) else []
+            for risk in risks:
+                if not isinstance(risk, dict):
+                    continue
+                severity = _normalize_severity(risk.get("severity"))
+                if severity == "High":
+                    severity_counts["high"] += 1
+                elif severity == "Medium":
+                    severity_counts["medium"] += 1
+                elif severity == "Low":
+                    severity_counts["low"] += 1
+
+    return day_count, activity_count, severity_counts
+
+
+def _build_pipeline_summary(score_data: dict[str, Any], day_output: list[dict[str, Any]], judge_result: dict[str, Any]) -> str:
+    score_value = int(score_data.get("value", 100) or 100)
+    day_count, activity_count, severities = _extract_summary_metrics(day_output)
+    removed = int(judge_result.get("removed", 0) or 0)
+    return (
+        f"Assessed {day_count} day(s) across {activity_count} activity segment(s). "
+        f"Overall risk score: {score_value}/100. "
+        f"Detected {severities['high']} high, {severities['medium']} medium, and {severities['low']} low risk signal(s). "
+        f"Noise-reduction removed {removed} low-value item(s)."
+    )
+
+
+def _build_pipeline_recommendations(day_output: list[dict[str, Any]], limit: int = 6) -> list[str]:
+    recommendations: list[str] = []
+    seen: set[str] = set()
+    for day in day_output:
+        if not isinstance(day, dict):
+            continue
+        activities = day.get("ACTIVITY") if isinstance(day.get("ACTIVITY"), list) else []
+        for activity in activities:
+            if not isinstance(activity, dict):
+                continue
+            risks = activity.get("RISK") if isinstance(activity.get("RISK"), list) else []
+            for risk in risks:
+                if not isinstance(risk, dict):
+                    continue
+                mitigation = _ntext(risk.get("mitigation"))
+                if not mitigation:
+                    continue
+                key = mitigation.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                recommendations.append(mitigation)
+                if len(recommendations) >= limit:
+                    return recommendations
+    return recommendations
+
+
 def compute_algorithmic_score(
     day_penalty: dict[str, float],
     severity_counts: dict[str, int],
@@ -2078,12 +2232,16 @@ def run_itinerary_pipeline(
         )
 
     score_data = compute_algorithmic_score(day_penalty, severity_counts, day_labels, day_risk_stats)
+    summary_text = _build_pipeline_summary(score_data, day_output, judge_result)
+    recommendations = _build_pipeline_recommendations(day_output)
 
     final_report = {
         "SCORE": {
             "value": int(score_data.get("value", 100)),
             "justification": str(score_data.get("justification", "")),
         },
+        "summary": summary_text,
+        "recommendations": recommendations,
         "DAY": day_output,
     }
 
@@ -2107,6 +2265,8 @@ def run_itinerary_pipeline(
             "error": judge_result.get("error"),
             "reason": judge_result.get("reason"),
         },
+        "summary": summary_text,
+        "recommendations": recommendations,
         "final_report": final_report,
         "score_breakdown": score_data,
     }
