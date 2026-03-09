@@ -8,6 +8,7 @@ Handles:
 
 import json
 import os
+import re
 from typing import Any
 
 import pdfplumber
@@ -21,6 +22,10 @@ except Exception:
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+LLM_INPUT_CHAR_LIMIT = 16000
+LLM_INPUT_FALLBACK_CHAR_LIMIT = 12000
+LLM_OUTPUT_MAX_TOKENS = 3000
 
 
 def extract_itinerary_from_document(file_path: str) -> dict[str, Any]:
@@ -85,7 +90,9 @@ def _extract_pdf_text(file_path: str) -> str:
     """Extract all text from PDF file."""
     try:
         text_parts = []
+        page_count = 0
         with pdfplumber.open(file_path) as pdf:
+            page_count = len(pdf.pages)
             for page_num, page in enumerate(pdf.pages):
                 text = page.extract_text() or ""
                 if text.strip():
@@ -98,7 +105,14 @@ def _extract_pdf_text(file_path: str) -> str:
                         for row in table:
                             text_parts.append(" | ".join(str(cell or "") for cell in row))
 
-        return "\n".join(text_parts)
+        combined = "\n".join(text_parts)
+        logger.info(
+            "[ItineraryParser] PDF extracted pages=%s chars=%s source=%s",
+            page_count,
+            len(combined),
+            file_path,
+        )
+        return combined
     except Exception as e:
         logger.error(f"PDF text extraction failed: {e}")
         return ""
@@ -149,8 +163,17 @@ def _parse_with_llm(pdf_text: str) -> dict[str, Any]:
         "meta": {}
     }
     """
+    llm_text, strategy = _select_itinerary_text_for_llm(pdf_text, limit=LLM_INPUT_CHAR_LIMIT)
+    logger.info(
+        "[LLM Parser] Prepared text for LLM total_chars=%s selected_chars=%s strategy=%s",
+        len(pdf_text),
+        len(llm_text),
+        strategy,
+    )
+
     api_key = os.getenv("OPENAI_API_KEY", "").strip()
     if not api_key:
+        logger.warning("[LLM Parser] OPENAI_API_KEY not configured; switching to fallback parser.")
         raise ValueError("OPENAI_API_KEY not configured")
 
     client = OpenAI(api_key=api_key)
@@ -180,9 +203,8 @@ Rules:
 - Return ONLY valid JSON, no markdown code blocks
 
 Text to parse:
-{pdf_text[:3000]}  # Limit to first 3000 chars to avoid token overflow
+{llm_text}
 """
-
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -195,12 +217,18 @@ Text to parse:
                 "content": prompt,
             },
         ],
-        temperature=0.3,
-        max_tokens=1000,
+        temperature=0.4,
+        max_tokens=LLM_OUTPUT_MAX_TOKENS,
     )
 
     try:
         content = response.choices[0].message.content or ""
+        finish_reason = response.choices[0].finish_reason
+        logger.info(
+            "[LLM Parser] Completion received finish_reason=%s response_chars=%s",
+            finish_reason,
+            len(content),
+        )
         # Clean up response (remove markdown code blocks if present)
         if content.startswith("```"):
             content = content.split("```")[1]
@@ -213,6 +241,28 @@ Text to parse:
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse LLM response as JSON: {e}")
         raise ValueError("LLM response was not valid JSON")
+
+
+def _select_itinerary_text_for_llm(text: str, *, limit: int) -> tuple[str, str]:
+    """Keep full text when small; otherwise prioritize itinerary-like lines across the document."""
+    if len(text) <= limit:
+        return text, "full"
+
+    lines = [line.strip() for line in text.splitlines() if line and line.strip()]
+    itinerary_pattern = re.compile(
+        r"(day\s*\d+|date|arrival|depart|visit|stay|hotel|check[- ]?in|check[- ]?out)",
+        re.IGNORECASE,
+    )
+    itinerary_lines = [line for line in lines if itinerary_pattern.search(line)]
+    prioritized = "\n".join(itinerary_lines)
+
+    if prioritized and len(prioritized) >= min(limit // 3, LLM_INPUT_FALLBACK_CHAR_LIMIT):
+        return prioritized[:limit], "itinerary_lines"
+
+    head_chars = min(limit // 2, len(text))
+    tail_chars = max(0, limit - head_chars)
+    stitched = f"{text[:head_chars]}\n...\n{text[-tail_chars:]}" if tail_chars else text[:head_chars]
+    return stitched[:limit], "head_tail"
 
 
 def _parse_with_fallback(pdf_text: str) -> dict[str, Any]:
